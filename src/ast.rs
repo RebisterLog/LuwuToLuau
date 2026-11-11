@@ -22,6 +22,7 @@ pub struct Param {
     pub default: Option<Expr>,
     pub visibility: Option<String>,
     pub is_const: bool,
+    pub ty: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +32,7 @@ pub struct FieldDecl {
     pub visibility: Option<String>,
     pub is_const: bool,
     pub is_expect: bool,
+    pub ty: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +45,7 @@ pub struct MethodDecl {
     pub is_final: bool,
     pub is_static: bool,
     pub is_expect: bool,
+    pub return_type: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -86,12 +89,14 @@ pub enum Stmt {
         kind: BindingKind,
         patterns: Vec<Pattern>,
         exprs: Vec<Expr>,
+        ty: Option<String>,
     },
     Function {
         kind: BindingKind,
         name: String,
         params: Vec<Param>,
         body: Vec<Stmt>,
+        return_type: Option<String>,
     },
     Assign {
         targets: Vec<Expr>,
@@ -195,5 +200,6 @@ pub enum Expr {
     Function {
         params: Vec<Param>,
         body: Vec<Stmt>,
+        return_type: Option<String>,
     },
 }

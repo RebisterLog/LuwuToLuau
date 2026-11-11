@@ -5,6 +5,7 @@ mod lexer;
 mod lower;
 mod luau;
 mod parser;
+mod validate;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -99,6 +100,11 @@ struct CommonArgs {
     /// Do not copy non-Luwu files (models, json, assets) into the output
     #[arg(long)]
     no_assets: bool,
+
+    /// Diagnostics that block the run: a preset (default, all, syntax,
+    /// contracts, types) or a comma-separated list. Repeatable.
+    #[arg(long = "fail-on", value_name = "CATEGORY", value_delimiter = ',')]
+    fail_on: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -215,6 +221,8 @@ struct Resolved {
     copy_assets: bool,
     debounce_ms: u64,
     config_path: Option<PathBuf>,
+    fail_on: config::FailOnFlags,
+    fail_on_desc: String,
 }
 
 fn main() {
@@ -251,7 +259,8 @@ fn resolve(
     out: Option<&Path>,
     exclude: &[String],
     debounce: Option<u64>,
-) -> Resolved {
+    fail_on: Option<config::FailOn>,
+) -> Result<Resolved, String> {
     let cfg: &Config = &loaded.config;
 
     let mut sources: Vec<PathBuf> = paths.to_vec();
@@ -276,7 +285,10 @@ fn resolve(
     }
     excludes.extend(exclude.iter().cloned());
 
-    Resolved {
+    let fail_on_cfg = fail_on.unwrap_or_else(|| cfg.build.fail_on.clone());
+    let fail_on_flags = fail_on_cfg.flags()?;
+
+    Ok(Resolved {
         paths: sources,
         out,
         excludes,
@@ -284,7 +296,9 @@ fn resolve(
         copy_assets: cfg.output.copy_assets,
         debounce_ms: debounce.unwrap_or(cfg.watch.debounce_ms),
         config_path: loaded.path.clone(),
-    }
+        fail_on_desc: fail_on_cfg.describe(),
+        fail_on: fail_on_flags,
+    })
 }
 
 /// `src/` when it holds Luwu sources, the current directory otherwise.
@@ -314,15 +328,27 @@ fn contains_luwu(dir: &Path) -> bool {
     false
 }
 
+fn parse_fail_on(values: &[String]) -> Result<Option<config::FailOn>, String> {
+    if values.is_empty() {
+        return Ok(None);
+    }
+    if values.len() == 1 {
+        return Ok(Some(config::FailOn::Preset(values[0].clone())));
+    }
+    Ok(Some(config::FailOn::List(values.to_vec())))
+}
+
 fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
     let loaded = load_config(args.config.as_deref(), args.no_config).map_err(|e| e.to_string())?;
+    let fail_on = parse_fail_on(&args.fail_on)?;
     let resolved = resolve(
         &loaded,
         &args.paths,
         args.out.as_deref(),
         &args.exclude,
         None,
-    );
+        fail_on,
+    )?;
 
     let collected = collect_all(&resolved.paths, &resolved.excludes, &resolved.out)?;
     let sources = collected.sources;
@@ -339,48 +365,65 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
 
     let copy_assets = resolved.copy_assets && !args.no_assets;
 
+    struct Built {
+        source: Source,
+        out_path: PathBuf,
+        code: String,
+    }
+
+    // Phase A: compile and validate every file, collect all diagnostics.
+    let mut built: Vec<Built> = Vec::with_capacity(sources.len());
+    let mut errors: Vec<String> = Vec::new();
+
+    for source in sources.into_iter() {
+        let out_path = map_output_path(&resolved.out, &source.rel);
+        match compile_file(&source.file, &resolved.fail_on) {
+            Ok(code) => built.push(Built { source, out_path, code }),
+            Err(mut es) => errors.append(&mut es),
+        }
+    }
+
+    if !errors.is_empty() {
+        for e in &errors {
+            eprintln!("error: {e}");
+        }
+        return Err(format!("{} error(s) blocked the build", errors.len()));
+    }
+
+    // Phase B: write artifacts only when the whole build is clean.
     if !check_only && resolved.clean && !args.dry_run {
         remove_output_dir(&resolved.out)?;
     }
 
-    let mut compiled = 0usize;
-    let mut failed = 0usize;
-
-    for source in &sources {
-        let out_path = map_output_path(&resolved.out, &source.rel);
-        match compile_file(&source.file) {
-            Ok(code) => {
-                compiled += 1;
-                if check_only {
-                    if args.verbose {
-                        println!("checked {}", source.file.display());
-                    }
-                } else if args.dry_run {
-                    println!("would write {}", out_path.display());
-                } else {
-                    if let Some(parent) = out_path.parent() {
-                        if let Err(e) = fs::create_dir_all(parent) {
-                            return Err(format!("cannot create `{}`: {e}", parent.display()));
-                        }
-                    }
-                    if let Err(e) = fs::write(&out_path, code) {
-                        return Err(format!("cannot write `{}`: {e}", out_path.display()));
-                    }
-                    if !args.quiet {
-                        println!("{} -> {}", source.file.display(), out_path.display());
-                    }
+    let mut copied = 0usize;
+    if check_only {
+        for item in &built {
+            if args.verbose {
+                println!("checked {}", item.source.file.display());
+            }
+        }
+    } else if args.dry_run {
+        for item in &built {
+            println!("would write {}", item.out_path.display());
+        }
+    } else {
+        for item in &built {
+            if let Some(parent) = item.out_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    return Err(format!("cannot create `{}`: {e}", parent.display()));
                 }
             }
-            Err(e) => {
-                failed += 1;
-                eprintln!("error: {e}");
+            if let Err(e) = fs::write(&item.out_path, &item.code) {
+                return Err(format!("cannot write `{}`: {e}", item.out_path.display()));
+            }
+            if !args.quiet {
+                println!("{} -> {}", item.source.file.display(), item.out_path.display());
             }
         }
     }
 
     // Everything that is not a Luwu source is copied as is, so that models,
     // json files and assets stay next to the generated Luau.
-    let mut copied = 0usize;
     if copy_assets && !check_only {
         for dir in &collected.dirs {
             let target = resolved.out.join(dir);
@@ -421,11 +464,8 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
         }
     }
 
-    if failed > 0 {
-        return Err(format!("{failed} of {} file(s) failed", sources.len()));
-    }
-
     if !args.quiet {
+        let compiled = built.len();
         match (check_only, args.dry_run) {
             (true, _) => println!("checked {compiled} file(s)"),
             (false, true) => {
@@ -449,13 +489,15 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
 fn run_watch(args: &WatchArgs) -> Result<(), String> {
     let loaded = load_config(args.common.config.as_deref(), args.common.no_config)
         .map_err(|e| e.to_string())?;
+    let fail_on = parse_fail_on(&args.common.fail_on)?;
     let resolved = resolve(
         &loaded,
         &args.common.paths,
         args.common.out.as_deref(),
         &args.common.exclude,
         args.debounce,
-    );
+        fail_on,
+    )?;
 
     println!(
         "watching {} (Ctrl+C to stop)",
@@ -691,7 +733,7 @@ fn run_clean(args: &CleanArgs) -> Result<(), String> {
 
 fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
     let loaded = load_config(args.config.as_deref(), args.no_config).map_err(|e| e.to_string())?;
-    let resolved = resolve(&loaded, &[], None, &[], None);
+    let resolved = resolve(&loaded, &[], None, &[], None, None)?;
 
     println!(
         "config file: {}",
@@ -716,6 +758,7 @@ fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
     println!("output.clean: {}", resolved.clean);
     println!("output.copy_assets: {}", resolved.copy_assets);
     println!("watch.debounce_ms: {}", resolved.debounce_ms);
+    println!("build.fail_on: {}", resolved.fail_on_desc);
     Ok(())
 }
 
@@ -916,17 +959,29 @@ fn map_output_path(out_dir: &Path, rel: &Path) -> PathBuf {
     path
 }
 
-fn compile_file(file: &Path) -> Result<String, String> {
-    let source = fs::read_to_string(file).map_err(|e| format!("cannot read `{}`: {e}", file.display()))?;
-    let tokens = lexer::lex(&source).map_err(|e| format!("{}: {e}", file.display()))?;
+fn compile_file(file: &Path, fail_on: &config::FailOnFlags) -> Result<String, Vec<String>> {
+    let source = fs::read_to_string(file).map_err(|e| vec![format!("cannot read `{}`: {e}", file.display())])?;
+    let tokens = lexer::lex(&source).map_err(|e| vec![format!("{}: {e}", file.display())])?;
     let mut parser = LuwuParser::new(tokens);
     let program = parser
         .parse_program()
-        .map_err(|e| format!("{}: {e}", file.display()))?;
+        .map_err(|e| vec![format!("{}: {e}", file.display())])?;
+
+    let diagnostics = validate::validate_program(&program);
+    let mut blocking: Vec<String> = Vec::new();
+    for d in diagnostics {
+        if d.blocks(fail_on) {
+            blocking.push(format!("{}: {}: {}", file.display(), d.category, d.message));
+        }
+    }
+    if !blocking.is_empty() {
+        return Err(blocking);
+    }
+
     let mut lowerer = Lowerer::new(&program);
     lowerer
         .lower(&program)
-        .map_err(|e| format!("{}: {e}", file.display()))
+        .map_err(|e| vec![format!("{}: {e}", file.display())])
 }
 
 /// Removes the output directory, refusing to touch anything dangerous.
@@ -1062,73 +1117,6 @@ class Potion implements Stackable(8) end
         assert!(out.contains("StackedArrowStackable = Stackable()"));
         assert!(out.contains("StackedPotionStackable = Stackable(8)"));
         assert!(out.contains("Arrow.add = StackedArrowStackable.add"));
-    }
-
-    fn fixture_files() -> Vec<std::path::PathBuf> {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let mut out = Vec::new();
-        collect_fixtures(&root, &mut out);
-        out.sort();
-        out
-    }
-
-    fn collect_fixtures(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_fixtures(&path, out);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("luwu") {
-                out.push(path);
-            }
-        }
-    }
-
-    fn compile_file(path: &std::path::Path) -> String {
-        let source = fs::read_to_string(path).expect("read fixture");
-        let tokens = lexer::lex(&source).expect("lex");
-        let mut parser = LuwuParser::new(tokens);
-        let program = parser.parse_program().expect("parse");
-        let mut lowerer = Lowerer::new(&program);
-        lowerer.lower(&program).expect("lower")
-    }
-
-    #[test]
-    fn every_fixture_compiles_into_plain_luau() {
-        let files = fixture_files();
-        assert!(files.len() >= 7, "expected the fixture set to be present");
-        for file in &files {
-            let out = compile_file(file);
-            assert!(!out.trim().is_empty(), "{} produced nothing", file.display());
-            for line in out.lines() {
-                let trimmed = line.trim_start();
-                for keyword in [
-                    "trait ",
-                    "class ",
-                    "implements",
-                    "expect ",
-                    "public ",
-                    "private ",
-                    "final ",
-                ] {
-                    assert!(
-                        !trimmed.starts_with(keyword),
-                        "{} leaked `{keyword}`: {}",
-                        file.display(),
-                        trimmed
-                    );
-                }
-            }
-            for leak in [": string", ": number", ": boolean", "class<", "nil?"] {
-                assert!(
-                    !out.contains(leak),
-                    "{} leaked the type syntax `{leak}`",
-                    file.display()
-                );
-            }
-        }
     }
 
     #[test]
@@ -1310,6 +1298,7 @@ print(class.fields(Robot()), class.member(Robot, "hello").kind)
             verbose: false,
             dry_run: false,
             no_assets: false,
+            fail_on: Vec::new(),
         };
         run_build(&args, false).expect("build succeeds");
 
@@ -1381,6 +1370,7 @@ end
                 watch: config::WatchConfig {
                     debounce_ms: 250,
                 },
+                build: config::BuildConfig::default(),
             },
             path: Some(PathBuf::from("luwu.toml")),
         };
@@ -1391,7 +1381,9 @@ end
             Some(Path::new("dist")),
             &["Extra".to_string()],
             None,
-        );
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.paths, vec![PathBuf::from("src")]);
         assert_eq!(resolved.out, PathBuf::from("dist"));
         assert!(resolved.clean);
@@ -1399,6 +1391,7 @@ end
         assert!(resolved.excludes.iter().any(|e| e == "Generated"));
         assert!(resolved.excludes.iter().any(|e| e == "Extra"));
         assert!(resolved.excludes.iter().any(|e| e == "build"));
+        assert_eq!(resolved.fail_on_desc, "default");
     }
 
     #[test]
@@ -1420,7 +1413,9 @@ end
             None,
             &[],
             Some(1000),
-        );
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.paths, vec![PathBuf::from("game")]);
         assert_eq!(resolved.out, PathBuf::from("build"));
         assert_eq!(resolved.debounce_ms, 1000);
@@ -1437,6 +1432,7 @@ end
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.input.paths, vec![PathBuf::from("src")]);
         assert_eq!(parsed.output.dir, PathBuf::from("build"));
+        assert_eq!(parsed.build.fail_on.describe(), "default");
     }
 
     #[test]

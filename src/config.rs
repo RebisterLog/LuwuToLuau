@@ -31,6 +31,9 @@ pub struct Config {
 
     #[serde(default)]
     pub watch: WatchConfig,
+
+    #[serde(default)]
+    pub build: BuildConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +73,92 @@ pub struct WatchConfig {
     pub debounce_ms: u64,
 }
 
+/// Which diagnostics block a build/check run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum FailOn {
+    /// A preset name such as "default", "all", "syntax", "contracts", "types".
+    Preset(String),
+    /// An explicit list of categories.
+    List(Vec<String>),
+}
+
+impl Default for FailOn {
+    fn default() -> Self {
+        FailOn::Preset("default".to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FailOnFlags {
+    pub syntax: bool,
+    pub contracts: bool,
+    pub types: bool,
+}
+
+impl FailOn {
+    pub fn flags(&self) -> Result<FailOnFlags, String> {
+        let names = match self {
+            FailOn::Preset(name) => match name.as_str() {
+                "default" | "all" => vec!["syntax", "contracts", "types"],
+                "syntax" => vec!["syntax"],
+                "contracts" => vec!["contracts"],
+                "types" => vec!["types"],
+                other => {
+                    return Err(format!(
+                        "unknown build.fail_on preset `{other}` (expected one of: default, all, syntax, contracts, types)"
+                    ))
+                }
+            },
+            FailOn::List(list) => list.iter().map(|s| s.as_str()).collect(),
+        };
+
+        let mut flags = FailOnFlags {
+            syntax: false,
+            contracts: false,
+            types: false,
+        };
+        for name in names {
+            match name {
+                "all" | "default" => {
+                    flags.syntax = true;
+                    flags.contracts = true;
+                    flags.types = true;
+                }
+                "syntax" => flags.syntax = true,
+                "contracts" => flags.contracts = true,
+                "types" => flags.types = true,
+                other => {
+                    return Err(format!(
+                        "unknown build.fail_on category `{other}` (expected: syntax, contracts, types)"
+                    ))
+                }
+            }
+        }
+        if !flags.syntax && !flags.contracts && !flags.types {
+            return Err("build.fail_on must enable at least one category".to_string());
+        }
+        Ok(flags)
+    }
+
+    pub fn describe(&self) -> String {
+        match self {
+            FailOn::Preset(s) => s.clone(),
+            FailOn::List(list) => format!("[{}]", list.join(", ")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildConfig {
+    /// Which diagnostics block a build/check run. Accepts a preset
+    /// ("default", "all", "syntax", "contracts", "types") or a list like
+    /// ["syntax", "contracts", "types"].
+    #[serde(default)]
+    pub fail_on: FailOn,
+}
+
 fn default_version() -> u32 {
     1
 }
@@ -93,6 +182,7 @@ impl Default for Config {
             input: InputConfig::default(),
             output: OutputConfig::default(),
             watch: WatchConfig::default(),
+            build: BuildConfig::default(),
         }
     }
 }
@@ -120,6 +210,14 @@ impl Default for WatchConfig {
     fn default() -> Self {
         Self {
             debounce_ms: default_debounce(),
+        }
+    }
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            fail_on: FailOn::default(),
         }
     }
 }
@@ -214,6 +312,11 @@ pub fn load(explicit: Option<&Path>, no_config: bool, start: &Path) -> Result<Lo
         });
     }
 
+    config.build.fail_on.flags().map_err(|message| ConfigError {
+        path: Some(path.clone()),
+        message,
+    })?;
+
     Ok(LoadedConfig {
         config,
         path: Some(path),
@@ -236,6 +339,7 @@ pub fn default_config_text() -> String {
         watch: WatchConfig {
             debounce_ms: default_debounce(),
         },
+        build: BuildConfig::default(),
     };
     let mut text = toml::to_string_pretty(&config).unwrap_or_default();
     text.push_str(
@@ -246,7 +350,10 @@ pub fn default_config_text() -> String {
          #   output.clean       - wipe the output folder before a build\n\
          #   output.copy_assets - copy everything that is not a .luwu file\n\
          #                        (models, json, assets) as is\n\
-         #   watch.debounce_ms  - rebuild delay in watch mode, ms\n",
+         #   watch.debounce_ms  - rebuild delay in watch mode, ms\n\
+         #   build.fail_on      - diagnostics that block a build/check run:\n\
+         #                        \"default\" | \"all\" | \"syntax\" | \"contracts\" | \"types\"\n\
+         #                        or a list, e.g. [\"syntax\", \"contracts\", \"types\"]\n",
     );
     text
 }

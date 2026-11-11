@@ -1,17 +1,19 @@
 version = 1
 
 [input]
-# This repository keeps its sources in the root, so the examples, fixtures
-# and demo project are excluded from the default build.
 paths = ["."]
-exclude = ["BuildExamples", "tests", "dist", "target", "ExampleRojoProject"]
+exclude = ["target", "build", "dist", ".git", "node_modules"]
 
 [output]
 dir = "build"
 clean = false
-# In this repository we only need the generated Luau in build/.
-copy_assets = false
+copy_assets = true
 
 [watch]
 debounce_ms = 400
+
+[build]
+# Diagnostics that block a build/check run: "default" | "all" | "syntax"
+# | "contracts" | "types", or a list like ["syntax", "contracts", "types"].
+fail_on = "default"
 

@@ -1,9 +1,0 @@
-class Account(public owner: string) end
-
-const account = Account("Ada")
-
-print(class.of(account) == Account)
-print(class.of({}))
-print(class.of("Ada"))
-print(class.name(Account))
-print(class.name(account))

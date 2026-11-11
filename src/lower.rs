@@ -101,12 +101,14 @@ impl Lowerer {
                 kind,
                 patterns,
                 exprs,
+                ..
             } => self.lower_decl(kind, patterns, exprs),
             Stmt::Function {
                 kind,
                 name,
                 params,
                 body,
+                ..
             } => {
                 let (params_out, defaults) = self.lower_params(params)?;
                 let body_out = self.with_function_scope(|this| {
@@ -780,7 +782,7 @@ impl Lowerer {
                 })
             }
             Expr::Is { .. } => Err("`is Ok/Err` is only supported in an if condition".into()),
-            Expr::Function { params, body } => {
+            Expr::Function { params, body, .. } => {
                 let (p, defaults) = self.lower_params(params)?;
                 let mut b = defaults;
                 b.extend(self.with_function_scope(|this| this.lower_block(body))?);

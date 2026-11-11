@@ -146,9 +146,11 @@ impl Parser {
             if self.eat_word("function") {
                 let name = self.expect_name()?;
                 let params = self.parse_params()?;
-                if self.eat_sym(":") {
-                    self.skip_type();
-                }
+                let return_type = if self.eat_sym(":") {
+                    self.skip_type()
+                } else {
+                    None
+                };
                 let body = self.parse_block_until(&["end"])?;
                 self.expect_word("end")?;
                 return Ok(Stmt::Function {
@@ -156,28 +158,34 @@ impl Parser {
                     name,
                     params,
                     body,
+                    return_type,
                 });
             }
 
             let patterns = self.parse_pattern_list_until(&["="])?;
-            if self.eat_sym(":") {
-                self.skip_type();
-            }
+            let ty = if self.eat_sym(":") {
+                self.skip_type()
+            } else {
+                None
+            };
             self.expect_sym("=")?;
             let exprs = self.parse_expr_list()?;
             return Ok(Stmt::Decl {
                 kind,
                 patterns,
                 exprs,
+                ty,
             });
         }
         if self.at_word("function") {
             self.advance();
             let name = self.expect_name()?;
             let params = self.parse_params()?;
-            if self.eat_sym(":") {
-                self.skip_type();
-            }
+            let return_type = if self.eat_sym(":") {
+                self.skip_type()
+            } else {
+                None
+            };
             let body = self.parse_block_until(&["end"])?;
             self.expect_word("end")?;
             return Ok(Stmt::Function {
@@ -185,6 +193,7 @@ impl Parser {
                 name,
                 params,
                 body,
+                return_type,
             });
         }
         if self.at_word("if") {
@@ -524,18 +533,23 @@ impl Parser {
         if self.eat_word("function") {
             let name = self.expect_name()?;
             let params = self.parse_params()?;
-            if self.eat_sym(":") {
-                self.skip_type();
-            }
+            let return_type = if self.eat_sym(":") {
+                self.skip_type()
+            } else {
+                None
+            };
             if is_expect {
+                let has_self = params.first().is_some_and(|p| p.name == "self");
+                let is_static = mods.iter().any(|m| m == "static") || !has_self;
                 return Ok(ClassMember::Method(MethodDecl {
                     name,
                     params,
                     body: Vec::new(),
                     visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
                     is_final: false,
-                    is_static: true,
+                    is_static,
                     is_expect: true,
+                    return_type,
                 }));
             }
             let body = self.parse_block_until(&["end"])?;
@@ -548,13 +562,16 @@ impl Parser {
                 is_final: mods.iter().any(|m| m == "final"),
                 is_static: mods.iter().any(|m| m == "static"),
                 is_expect: false,
+                return_type,
             }));
         }
 
         let name = self.expect_name()?;
-        if self.eat_sym(":") {
-            self.skip_type();
-        }
+        let ty = if self.eat_sym(":") {
+            self.skip_type()
+        } else {
+            None
+        };
         let default = if self.eat_sym("=") {
             Some(self.parse_expr()?)
         } else {
@@ -566,6 +583,7 @@ impl Parser {
             visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
             is_const: mods.iter().any(|m| m == "const"),
             is_expect,
+            ty,
         }))
     }
 
@@ -595,9 +613,11 @@ impl Parser {
             } else {
                 self.expect_name()?
             };
-            if self.eat_sym(":") {
-                self.skip_type();
-            }
+            let ty = if self.eat_sym(":") {
+                self.skip_type()
+            } else {
+                None
+            };
             let default = if self.eat_sym("=") {
                 Some(self.parse_expr()?)
             } else {
@@ -608,6 +628,7 @@ impl Parser {
                 default,
                 visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
                 is_const: mods.iter().any(|m| *m == "const"),
+                ty,
             });
             if self.eat_sym(")") {
                 break;
@@ -617,11 +638,12 @@ impl Parser {
         Ok(params)
     }
 
-    /// Consume a type annotation. Types are erased from the output, so the
-    /// parser only needs to know where the annotation stops.
-    fn skip_type(&mut self) {
+    /// Consume a type annotation and return its textual form. Types are
+    /// erased from the generated Luau, but kept for validation.
+    fn skip_type(&mut self) -> Option<String> {
         let start_line = self.cur_token().line;
         let mut depth: i32 = 0;
+        let mut parts: Vec<String> = Vec::new();
         while !matches!(self.cur(), Tok::Eof) {
             if depth == 0 {
                 if self.cur_token().line > start_line {
@@ -660,8 +682,9 @@ impl Parser {
                     _ => {}
                 }
             }
-            match self.cur() {
+            match self.cur().clone() {
                 Tok::Sym(s) if s == "(" || s == "{" || s == "[" || s == "<" => {
+                    parts.push(s);
                     depth += 1;
                     self.advance();
                 }
@@ -669,13 +692,20 @@ impl Parser {
                     if depth == 0 {
                         break;
                     }
+                    parts.push(s);
                     depth -= 1;
                     self.advance();
                 }
-                _ => {
+                tok => {
+                    parts.push(tok.to_string());
                     self.advance();
                 }
             }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(""))
         }
     }
 
@@ -961,12 +991,14 @@ impl Parser {
                     }
                     "function" => {
                         let params = self.parse_params()?;
-                        if self.eat_sym(":") {
-                            self.skip_type();
-                        }
+                        let return_type = if self.eat_sym(":") {
+                            self.skip_type()
+                        } else {
+                            None
+                        };
                         let body = self.parse_block_until(&["end"])?;
                         self.expect_word("end")?;
-                        Ok(Expr::Function { params, body })
+                        Ok(Expr::Function { params, body, return_type })
                     }
                     _ => Ok(Expr::Ident(w)),
                 }
