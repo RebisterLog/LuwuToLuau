@@ -1,17 +1,17 @@
 version = 1
 
 [input]
-# в этом репозитории исходники лежат в корне, а примеры, фикстуры и
-# демо-проект компилировать не нужно
+# This repository keeps its sources in the root, so the examples, fixtures
+# and demo project are excluded from the default build.
 paths = ["."]
 exclude = ["BuildExamples", "tests", "dist", "target", "ExampleRojoProject"]
 
 [output]
 dir = "build"
 clean = false
-# в этом репозитории ассеты переносить не нужно: build/ содержит только
-# сгенерированный Luau
+# In this repository we only need the generated Luau in build/.
 copy_assets = false
 
 [watch]
 debounce_ms = 400
+

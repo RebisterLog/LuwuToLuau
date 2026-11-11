@@ -1,5 +1,6 @@
 mod ast;
 mod config;
+mod install;
 mod lexer;
 mod lower;
 mod luau;
@@ -53,6 +54,12 @@ enum Command {
 
     /// Show the effective configuration
     PrintConfig(PrintConfigArgs),
+
+    /// Install the `luwu` command so it is available from any terminal
+    Install(InstallArgs),
+
+    /// Remove the installed `luwu` command
+    Uninstall(UninstallArgs),
 }
 
 #[derive(Args, Clone)]
@@ -172,6 +179,32 @@ struct PrintConfigArgs {
     no_config: bool,
 }
 
+#[derive(Args)]
+struct InstallArgs {
+    /// Directory to install into (defaults to %LOCALAPPDATA%\Luwu on Windows)
+    #[arg(long, value_name = "DIR")]
+    dir: Option<PathBuf>,
+
+    /// Do not add the install directory to the user PATH
+    #[arg(long)]
+    no_path: bool,
+
+    /// Overwrite the binary even if it is already installed
+    #[arg(long)]
+    force: bool,
+}
+
+#[derive(Args)]
+struct UninstallArgs {
+    /// Directory to remove from (defaults to %LOCALAPPDATA%\Luwu on Windows)
+    #[arg(long, value_name = "DIR")]
+    dir: Option<PathBuf>,
+
+    /// Do not remove the install directory from the user PATH
+    #[arg(long)]
+    keep_path: bool,
+}
+
 /// Everything the commands need after the configuration and the flags are
 /// merged together.
 struct Resolved {
@@ -195,6 +228,8 @@ fn main() {
         Command::New(args) => run_new(&args),
         Command::Clean(args) => run_clean(&args),
         Command::PrintConfig(args) => run_print_config(&args),
+        Command::Install(args) => run_install(&args),
+        Command::Uninstall(args) => run_uninstall(&args),
     };
 
     if let Err(err) = result {
@@ -656,13 +691,7 @@ fn run_clean(args: &CleanArgs) -> Result<(), String> {
 
 fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
     let loaded = load_config(args.config.as_deref(), args.no_config).map_err(|e| e.to_string())?;
-    let resolved = resolve(
-        &loaded,
-        &[],
-        None,
-        &[],
-        None,
-    );
+    let resolved = resolve(&loaded, &[], None, &[], None);
 
     println!(
         "config file: {}",
@@ -682,13 +711,85 @@ fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    println!(
-        "input.exclude: {}",
-        resolved.excludes.join(", ")
-    );
+    println!("input.exclude: {}", resolved.excludes.join(", "));
     println!("output.dir: {}", resolved.out.display());
     println!("output.clean: {}", resolved.clean);
+    println!("output.copy_assets: {}", resolved.copy_assets);
     println!("watch.debounce_ms: {}", resolved.debounce_ms);
+    Ok(())
+}
+
+fn run_install(args: &InstallArgs) -> Result<(), String> {
+    let dir = args.dir.clone().unwrap_or_else(install::default_install_dir);
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate the running binary: {e}"))?;
+    let target = dir.join(install::binary_name());
+
+    let already_there = same_path(&exe, &target);
+    if already_there && !args.force {
+        println!("already installed at {}", target.display());
+    } else {
+        let installed = install::install_binary(&exe, &dir)?;
+        println!("installed {}", installed.display());
+    }
+
+    if args.no_path {
+        println!("PATH was not changed (--no-path).");
+    } else {
+        match install::add_to_user_path(&dir) {
+            Ok(true) => {
+                println!("added {} to the user PATH", dir.display());
+                println!("{}", install::path_hint(&dir));
+            }
+            Ok(false) => {
+                if install::is_in_user_path(&dir) {
+                    println!("PATH already contains {}", dir.display());
+                } else {
+                    println!("{}", install::path_hint(&dir));
+                }
+            }
+            Err(e) => {
+                eprintln!("warning: could not update PATH: {e}");
+                println!("{}", install::path_hint(&dir));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_uninstall(args: &UninstallArgs) -> Result<(), String> {
+    let dir = args.dir.clone().unwrap_or_else(install::default_install_dir);
+    let target = dir.join(install::binary_name());
+
+    let current = std::env::current_exe().ok();
+    let running_installed = current.as_ref().map(|c| same_path(c, &target)).unwrap_or(false);
+
+    if running_installed {
+        // On Windows the running binary is locked; removing it would fail.
+        if cfg!(windows) {
+            return Err(format!(
+                "you are running `{}`. Run uninstall from a different copy, for example:\n  luwu uninstall --dir \"{}\"  (from another location)",
+                target.display(),
+                dir.display()
+            ));
+        }
+    }
+
+    match install::uninstall_binary(&dir)? {
+        true => println!("removed {}", target.display()),
+        false => println!("not installed at {}", target.display()),
+    }
+
+    if args.keep_path {
+        println!("PATH was not changed (--keep-path).");
+    } else {
+        match install::remove_from_user_path(&dir) {
+            Ok(true) => println!("removed {} from the user PATH", dir.display()),
+            Ok(false) => { /* nothing to do */ }
+            Err(e) => eprintln!("warning: could not update PATH: {e}"),
+        }
+    }
+
     Ok(())
 }
 

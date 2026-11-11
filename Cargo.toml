@@ -2,9 +2,12 @@
 name = "luwu"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70"
 description = "Transpiler from Luwu (.luwu) to plain Luau (.luau) for Roblox and Rojo projects"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/RebisterLog/LuwuToLuau"
+homepage = "https://github.com/RebisterLog/LuwuToLuau"
 keywords = ["luau", "luwu", "transpiler", "roblox", "rojo"]
 categories = ["command-line-utilities", "development-tools"]
 

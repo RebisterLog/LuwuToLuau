@@ -46,10 +46,19 @@ $size = [math]::Round((Get-Item $target).Length / 1MB, 2)
 Write-Host "packaged $target ($size MB)" -ForegroundColor Green
 
 if ($Zip) {
-    $archive = Join-Path $dist "luwu-$((Get-Content (Join-Path $root 'Cargo.toml') | Select-String '^version' | ForEach-Object { ($_ -split '=')[1].Trim().Trim('"') })).zip"
+    $version = (Get-Content (Join-Path $root 'Cargo.toml') |
+        Select-String '^version' |
+        ForEach-Object { ($_ -split '=')[1].Trim().Trim('"') } |
+        Select-Object -First 1)
+    $archive = Join-Path $dist "luwu-$version.zip"
     if (Test-Path $archive) { Remove-Item $archive -Force }
     Copy-Item (Join-Path $root "README.md") $dist -Force
-    Compress-Archive -Path (Join-Path $dist "luwu.exe"), (Join-Path $dist "README.md") -DestinationPath $archive
+    Copy-Item (Join-Path $root "scripts\install.ps1") $dist -Force
+    Compress-Archive -Path `
+        (Join-Path $dist "luwu.exe"), `
+        (Join-Path $dist "README.md"), `
+        (Join-Path $dist "install.ps1") `
+        -DestinationPath $archive
     Write-Host "packaged $archive" -ForegroundColor Green
 }
 

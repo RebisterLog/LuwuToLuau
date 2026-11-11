@@ -38,27 +38,75 @@ print(Greeter("Ada"):hello())
 
 ## Установка
 
-**Готовый бинарник:** скачайте `luwu.exe` из релизов (или соберите его сами,
-см. ниже) и положите в любую папку. Чтобы команда работала из любого места,
-добавьте папку в `PATH`:
+После установки команда `luwu` должна быть доступна в терминале из любого места
+(`luwu --version`).
+
+### Готовый бинарник (Windows, самый простой способ)
+
+1. Скачайте релизный архив `luwu-<version>.zip` и распакуйте его.
+2. Запустите установщик из распакованной папки:
 
 ```powershell
-$env:PATH += ";C:\tools\luwu"
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-**Из исходников:**
+Скрипт копирует `luwu.exe` в `%LOCALAPPDATA%\Luwu` и добавляет эту папку в
+пользовательский `PATH`. Откройте **новый** терминал и проверьте:
 
 ```powershell
-git clone <репозиторий> luwu
-cd luwu
-cargo install --path .        # бинарник попадёт в ~/.cargo/bin
+luwu --version
 ```
 
-**Сборка release-версии и упаковка:**
+Если `luwu.exe` у вас уже есть отдельно, его тоже можно установить одной
+командой — она сама скопирует себя и пропишет `PATH`:
+
+```powershell
+.\luwu.exe install
+```
+
+Полезные варианты:
+
+```powershell
+.\luwu.exe install --dir "C:\tools\luwu"   # другая папка
+.\luwu.exe install --no-path                # только скопировать, без PATH
+.\luwu.exe uninstall                        # удалить команду и запись из PATH
+```
+
+> Подсказка: в новых окнах терминала PATH подхватывается автоматически. Уже
+> открытые окна нужно перезапустить.
+
+### Через Cargo (crate)
+
+Если установлен [Rust](https://rustup.rs/), это самый удобный способ сразу
+получить готовую команду:
+
+```powershell
+# из исходников этого репозитория
+cargo install --path .
+
+# или напрямую из git-репозитория
+cargo install --git https://github.com/RebisterLog/LuwuToLuau
+```
+
+Cargo соберёт release-бинарник и положит его в `~/.cargo/bin` (`luwu.exe` на
+Windows), который обычно уже есть в `PATH`. После этого команда доступна сразу:
+
+```powershell
+luwu --version
+luwu build
+```
+
+Обновление — та же команда с флагом `--force`:
+
+```powershell
+cargo install --path . --force
+```
+
+### Сборка release-версии и упаковка
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -Zip
-# -> dist/luwu.exe и dist/luwu-<version>.zip
+# -> dist/luwu.exe, dist/install.ps1 и dist/luwu-<version>.zip
 ```
 
 ---
@@ -104,6 +152,8 @@ rojo serve                    # в другом
 | `luwu new <NAME>` | Создаёт новый проект целиком (конфиг + исходники + `.gitignore`) |
 | `luwu clean` | Удаляет выходную папку |
 | `luwu print-config` | Показывает итоговую (конфиг + флаги) конфигурацию |
+| `luwu install` | Устанавливает команду `luwu` в систему (копирует бинарник и прописывает PATH) |
+| `luwu uninstall` | Удаляет установленную команду `luwu` |
 
 ### `init` и `new`
 
