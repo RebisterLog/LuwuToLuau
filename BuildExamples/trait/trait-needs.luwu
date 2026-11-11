@@ -1,0 +1,16 @@
+trait Named
+    expect const name: string
+end
+
+trait Speaker needs Named
+    function introduce(self): string
+        return `I'm {self.name}.`
+    end
+end
+
+class Robot implements Speaker
+    const name = "R2"
+end
+
+print(Robot():introduce())
+print(class.implements(Robot(), Named))

@@ -1,0 +1,185 @@
+-- Types.luwu — общий модуль: классы, трейты, «перечисления» и работа с none.
+--
+-- Модуль возвращает таблицу с публичным API, чтобы сервер и клиент
+-- пользовались одними и теми же классами.
+
+-- Трейт с обязательными членами (`expect`) и методом по умолчанию.
+trait Named
+    expect const name: string
+
+    function greeting(self): string
+        return `hello, {self.name}`
+    end
+end
+
+-- Трейт с несколькими обязательными членами и готовыми реализациями.
+trait Damageable
+    expect function current_health(self): number
+    expect const max_health: number
+
+    function is_alive(self): boolean
+        return self:current_health() > 0
+    end
+
+    function describe(self): string
+        return `{self.name} ({self:current_health()}/{self.max_health})`
+    end
+end
+
+-- Класс с primary-конструктором: max_health становится и параметром, и полем.
+class Health(max_health: number = 100) implements Damageable
+    public const name = "vitals"
+    public health = max_health
+
+    public function current_health(self): number
+        return self.health
+    end
+
+    public function damage(self, amount: number): number
+        self.health = math.max(0, self.health - amount)
+        return self.health
+    end
+
+    public function heal(self, amount: number): number
+        self.health = math.min(self.max_health, self.health + amount)
+        return self.health
+    end
+end
+
+-- Трейт-«перечисление»: общие методы живут в трейте, значения — в классах.
+trait Element
+    expect const id: string
+    expect const label: string
+
+    function is_friendly(self): boolean
+        return self.id == "water" or self.id == "earth"
+    end
+
+    function to_string(self): string
+        return self.label
+    end
+end
+
+class Fire implements Element
+    const id = "fire"
+    const label = "Fire"
+end
+
+class Water implements Element
+    const id = "water"
+    const label = "Water"
+end
+
+class Earth implements Element
+    const id = "earth"
+    const label = "Earth"
+end
+
+const ELEMENTS: { Element } = { Fire(), Water(), Earth() }
+
+-- Обычный класс с метаметодами: складываем точки и красиво печатаем.
+class Point(x: number, y: number)
+    public function __add(self, other: Point): Point
+        return Point(self.x + other.x, self.y + other.y)
+    end
+
+    public function __tostring(self): string
+        return `({self.x}, {self.y})`
+    end
+
+    public function __mul(self, scalar: number): Point
+        return Point(self.x * scalar, self.y * scalar)
+    end
+end
+
+-- `none` означает «значения нет», но в отличие от nil не ломает массивы.
+const function find_element(elements: { Element }, id: string): Element?
+    for _, element in elements do
+        if element.id == id then
+            return element
+        end
+    end
+    return none
+end
+
+-- `or return` — короткая запись для раннего выхода.
+const function element_label(elements: { Element }, id: string): string
+    const element = find_element(elements, id) or return "unknown"
+    return element:to_string()
+end
+
+-- `if const ... when` — проверка с привязкой значения.
+const function friendly_label(elements: { Element }, id: string): string
+    if const element = find_element(elements, id) when element:is_friendly() then
+        return `friendly: {element:to_string()}`
+    end
+    return "not friendly"
+end
+
+-- Comprehension: цикл, фильтр и добавление в новую таблицу.
+const function friendly_labels(elements: { Element }): { string }
+    const labels = { for _, element in elements when element:is_friendly() give element:to_string() }
+    return labels
+end
+
+-- `do ... give` — блок, который возвращает значение.
+const function friendly_count(elements: { Element }): number
+    const total = do
+        local count = 0
+        for _, element in elements do
+            if element:is_friendly() then
+                count += 1
+            end
+        end
+        give count
+    return total
+end
+
+-- Разбор входящего текста: `try` превращает ошибку в Err.
+const function parse_amount(text: string): number
+    const value = tonumber(text)
+    if value == nil then
+        error(`not a number: {text}`, 2)
+    end
+    return value
+end
+
+-- Значение по умолчанию для аргумента.
+const function clamp(value: number, min: number = 0, max: number = 100): number
+    return math.max(min, math.min(max, value))
+end
+
+-- Bundle: кортеж значений, который удобно передавать целиком.
+const function midpoint(a: Point, b: Point): Point
+    return (a + b) * 0.5
+end
+
+-- Отладочная информация о классе: class.of / class.name.
+const function describe_class(value: any): string
+    const cls = class.of(value)
+    if cls == nil then
+        return "plain value"
+    end
+    return class.name(value) or "unknown"
+end
+
+return {
+    Named = Named,
+    Damageable = Damageable,
+    Health = Health,
+    Element = Element,
+    Fire = Fire,
+    Water = Water,
+    Earth = Earth,
+    Point = Point,
+    ELEMENTS = ELEMENTS,
+    find_element = find_element,
+    element_label = element_label,
+    friendly_label = friendly_label,
+    friendly_labels = friendly_labels,
+    friendly_count = friendly_count,
+    parse_amount = parse_amount,
+    clamp = clamp,
+    midpoint = midpoint,
+    describe_class = describe_class,
+}

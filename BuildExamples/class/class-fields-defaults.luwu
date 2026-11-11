@@ -1,0 +1,14 @@
+class Username(raw: string)
+    text = string.lower((string.gsub(raw, "%s+", "_")))
+end
+
+const name = Username("Ada Lovelace")
+print(name.text, name.raw)
+
+class Rect(width: number, height: number)
+    area = width * height
+    label = `{width}x{height}`
+end
+
+const rect = Rect(3, 4)
+print(rect.area, rect.label)

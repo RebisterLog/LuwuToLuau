@@ -1,0 +1,25 @@
+trait Shape
+    expect function area(self): number
+
+    final function total_area(shapes: { Shape }): number
+        local total = 0
+        for _, shape in shapes do
+            total += shape:area()
+        end
+        return total
+    end
+end
+
+class Rectangle(width: number, height: number) implements Shape
+    function area(self): number
+        return self.width * self.height
+    end
+end
+
+class Circle(radius: number) implements Shape
+    function area(self): number
+        return math.pi * self.radius ^ 2
+    end
+end
+
+print(Shape.total_area({ Rectangle(2, 3), Circle(1) }))

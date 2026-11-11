@@ -1,0 +1,6 @@
+top(override:middle(base)) base base leaf
+top(middle(base)) base
+true
+true
+true
+true true

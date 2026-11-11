@@ -1,0 +1,25 @@
+[package]
+name = "luwu"
+version = "0.1.0"
+edition = "2021"
+description = "Transpiler from Luwu (.luwu) to plain Luau (.luau) for Roblox and Rojo projects"
+license = "MIT"
+readme = "README.md"
+keywords = ["luau", "luwu", "transpiler", "roblox", "rojo"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "luwu"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.2.1"

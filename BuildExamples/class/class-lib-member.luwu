@@ -1,0 +1,12 @@
+class Profile(public const name: string)
+    public function greet(self): string
+        return `hi {self.name}`
+    end
+end
+
+const ada = Profile("Ada")
+
+print(class.member(ada, "name"))
+print(class.member(Profile, "greet"))
+print(class.member(Profile, "name"))
+print(class.member(Profile, "name"):get(ada))

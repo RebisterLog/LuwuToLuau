@@ -1,0 +1,27 @@
+# Rust
+/target
+
+# Generated Luau (the transpiler output)
+/build
+/build_test
+/dist
+
+# Compiled Luau is never committed, except the reference examples and the
+# smoke test of the example project.
+*.luau
+!BuildExamples/**/*.luau
+!ExampleRojoProject/tests/*.luau
+
+# Generated tree of the example project
+/ExampleRojoProject/build
+
+# Rojo artifacts
+*.rbxl
+*.rbxlx
+sourcemap.json
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode

@@ -1,0 +1,19 @@
+const list = { "first", none, "third" }
+print(#list, list[2] == none, list[2] == nil)
+
+const function find(items: { number }, wanted: number): number?
+    for _, item in items do
+        if item == wanted then
+            return item
+        end
+    end
+    return none
+end
+
+const found = find({ 10, 20 }, 20)
+if found then
+    print(`found {found}`)
+end
+
+const missing = find({ 10, 20 }, 99)
+print(missing == none)

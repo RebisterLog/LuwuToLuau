@@ -1,0 +1,50 @@
+trait Greeter
+    expect const name: string
+
+    function greet(self): string
+        return `hi {self.name}`
+    end
+end
+
+trait Aged
+    expect const age: number
+
+    function describe(self): string
+        return `{self.name} ({self.age})`
+    end
+end
+
+trait Polite needs Greeter
+    function polite(self): string
+        return `{self:greet()}!`
+    end
+end
+
+class Person implements Greeter, Aged, Polite
+    const name = "Ada"
+    const age = 36
+
+    function greet(self): string
+        return Greeter.greet(self) .. "!"
+    end
+end
+
+class Robot implements Greeter, Aged, Polite
+    const name = "R2"
+    const age = 2
+end
+
+const people: { Greeter } = { Person(), Robot() }
+
+for _, person in people do
+    print(person:greet(), person:describe(), person:polite())
+end
+
+const ada = Person()
+print(class.implements(ada, Greeter))
+print(class.implements(ada, Aged))
+print(class.implements(ada, Polite))
+print(class.implements(ada, Greeter), class.implements(ada, Aged))
+print(#class.fields(ada))
+print(class.member(ada, "name").name)
+print(class.member(Person, "greet").kind)

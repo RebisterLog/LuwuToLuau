@@ -1,0 +1,24 @@
+trait Planet
+    expect const name: string
+    expect const gravity: number
+
+    function weight(self, mass: number): number
+        return mass * self.gravity
+    end
+end
+
+class Mercury implements Planet
+    const name = "Mercury"
+    const gravity = 3.7
+end
+
+class Earth implements Planet
+    const name = "Earth"
+    const gravity = 9.8
+end
+
+const planets: { Planet } = { Mercury(), Earth() }
+
+for _, planet in planets do
+    print(planet.name, planet:weight(80))
+end

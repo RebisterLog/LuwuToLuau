@@ -1,0 +1,11 @@
+const party = { "Ada", "Grace", "Alan" }
+
+table.drop(party, "Grace")
+print(#party, table.concat(party, ", "))
+
+table.drop(party, "missing")
+print(#party, table.concat(party, ", "))
+
+const numbers = { 10, 20, 30, 20 }
+table.drop(numbers, 20)
+print(#numbers, table.concat(numbers, ", "))

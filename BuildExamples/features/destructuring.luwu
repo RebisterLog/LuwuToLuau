@@ -1,0 +1,20 @@
+const player = { name = "Ada", level = 12 }
+const .{ name, level } = player
+print(name, level)
+
+const person = .{ name, level }
+print(person.name, person.level)
+
+const tasks = {
+    { title = "Feed Nyla", done = true },
+    { title = "Write docs", done = false },
+}
+
+for _, .{ title, done } in tasks do
+    print(title, done)
+end
+
+class Point(x: number, y: number) end
+
+const .{ x, y } = Point(3, 4)
+print(x, y)

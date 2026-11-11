@@ -1,0 +1,36 @@
+trait Mathy
+    expect function value(self): number
+    expect const label: string
+
+    final function describe(self): string
+        return `{self.label}={self:value()}`
+    end
+
+    static function twice(n: number): number
+        return n * 2
+    end
+end
+
+class Doubler implements Mathy
+    const label = "double"
+
+    function value(self): number
+        return Mathy.twice(21)
+    end
+end
+
+class Tripler implements Mathy
+    const label = "triple"
+
+    function value(self): number
+        return 21 * 3
+    end
+end
+
+print(Doubler():describe(), Tripler():describe())
+print(Mathy.twice(8), Mathy.describe(Doubler()))
+
+const shapes: { Mathy } = { Doubler(), Tripler() }
+for _, shape in shapes do
+    print(shape.label, shape:describe())
+end

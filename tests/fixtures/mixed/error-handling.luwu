@@ -1,0 +1,48 @@
+class Safe
+    items: { string } = { "a", "b", "c" }
+
+    function without(self, value: string): { string }
+        local copy = {}
+        for _, item in self.items do
+            if item ~= value then
+                table.insert(copy, item)
+            end
+        end
+        return copy
+    end
+
+    function parsed(self, text: string): number?
+        const value = tonumber(text)
+        if value == nil then
+            return none
+        end
+        return value
+    end
+end
+
+const s = Safe()
+print(#s:without("b"), table.concat(s:without("b"), ","))
+
+const function parse_number(text: string): number
+    return tonumber(text) or error(`not a number: {text}`, 2)
+end
+
+const ok = try parse_number("42")
+const bad = try parse_number("nope")
+
+if ok is Ok.(value) then
+    print(`parsed {value}`)
+end
+
+if bad is Err.(problem) then
+    print(`failed {problem}`)
+end
+
+const missing = s:parsed("nope")
+print(missing == none)
+
+const found = s:parsed("7")
+print(found == none)
+
+const long_names = { for _, item in s.items when #item > 0 give string.upper(item) }
+print(table.concat(long_names, ","))

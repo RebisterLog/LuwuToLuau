@@ -1,0 +1,11 @@
+const point = .(3, 4)
+const .(x, y) = point
+print(point.1, x + y)
+
+const name, age = "Ada", 36
+const person = .{ name, age }
+print(person.name, person.age)
+
+const scores: { [string]: string? } = {}
+scores["ada,1"] = "gold"
+print(scores["ada,1"])

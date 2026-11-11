@@ -1,0 +1,14 @@
+20 20 account
+ADA (10): 20
+1 5
+0 BOB (0): 0
+true false
+Account Account
+owner 1 true
+balance 2 false
+kind nil true
+display nil false
+history nil false
+5
+deposit
+public const owner = "Ada"

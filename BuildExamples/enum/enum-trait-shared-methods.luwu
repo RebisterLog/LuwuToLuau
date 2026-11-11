@@ -1,0 +1,37 @@
+trait Light
+    expect const name: string
+    expect const next_name: string
+
+    function go(self): boolean
+        return self.name == "green"
+    end
+
+    function stop(self): boolean
+        return self.name == "red"
+    end
+
+    function label(self): string
+        return `{self.name} -> {self.next_name}`
+    end
+end
+
+class Red implements Light
+    const name = "red"
+    const next_name = "green"
+end
+
+class Yellow implements Light
+    const name = "yellow"
+    const next_name = "red"
+end
+
+class Green implements Light
+    const name = "green"
+    const next_name = "yellow"
+end
+
+const lights: { Light } = { Red(), Yellow(), Green() }
+
+for _, light in lights do
+    print(light:label(), light:go(), light:stop())
+end

@@ -1,0 +1,4 @@
+double=42 triple=63
+16 double=42
+double double=42
+triple triple=63

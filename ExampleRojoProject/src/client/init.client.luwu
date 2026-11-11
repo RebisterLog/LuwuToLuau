@@ -1,0 +1,33 @@
+-- Клиентский скрипт: отправляет действия серверу и печатает ответы.
+
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+const Types = require(ReplicatedStorage.Shared.Types)
+const Events = require(ReplicatedStorage.Shared.Events)
+
+const network = ReplicatedStorage:WaitForChild("Network")
+const action_channel = Events.RemoteChannel(network:WaitForChild("PlayerAction"))
+const feedback_channel = Events.RemoteChannel(network:WaitForChild("Feedback"))
+
+feedback_channel:on_client(function(payload: { [string]: any })
+    const kind = payload.kind or "unknown"
+    const message = payload.message or tostring(payload.left)
+    print(`[client] {kind}: {message}`)
+end)
+
+-- Точка из общего модуля: работают метаметоды __add и __mul.
+const origin = Types.Point(0, 0)
+const target = Types.Point(3, 4)
+const middle = Types.midpoint(origin, target)
+print(`[client] midpoint: {middle}`)
+
+-- Класс из общего модуля: class.of / class.name.
+const point_class = Types.describe_class(origin)
+print(`[client] class of origin: {point_class}`)
+
+-- Отправляем действие серверу.
+action_channel:fire_server({ action = "damage", amount = "25" })
+
+const local_player = Players.LocalPlayer
+print(`[client] local player: {local_player.Name}`)

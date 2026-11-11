@@ -1,0 +1,27 @@
+trait Pool(size: number = 2)
+    used = 0
+
+    function take(self): number
+        if self.used < self.size then
+            self.used += 1
+        end
+        return self.used
+    end
+
+    function reset(self)
+        self.used = 0
+    end
+end
+
+class Small implements Pool end
+class Large implements Pool(5) end
+
+const small = Small()
+const large = Large()
+
+print(small:take(), small:take(), small:take())
+print(large:take(), large:take(), large:take(), large:take(), large:take(), large:take())
+
+small:reset()
+print(small:take(), small.size, large.size, large.used)
+print(Small ~= Large)

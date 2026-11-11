@@ -1,0 +1,16 @@
+trait Greeting
+    function greet(self): string
+        return "Hello!"
+    end
+end
+
+class Pirate implements Greeting
+    function greet(self): string
+        return Greeting.greet(self) .. " Arr!"
+    end
+end
+
+class Sailor implements Greeting end
+
+print(Pirate():greet())
+print(Sailor():greet())

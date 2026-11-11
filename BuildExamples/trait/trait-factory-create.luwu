@@ -1,0 +1,44 @@
+const components: { [class<Component>]: true? } = {}
+
+trait Component
+    expect function __init(self)
+    expect function tag(): string
+    expect function render(self): string
+
+    function __create(tag: string): Component
+        for cls in components do
+            if cls.tag() == tag then
+                return cls()
+            end
+        end
+        return error(`no component renders <{tag}>`, 2)
+    end
+
+    final function __implemented(cls: class<Component>)
+        components[cls] = true
+    end
+end
+
+class Button() implements Component
+    function tag(): string
+        return "button"
+    end
+
+    function render(self): string
+        return "<button>Save</button>"
+    end
+end
+
+class Spinner() implements Component
+    function tag(): string
+        return "progress"
+    end
+
+    function render(self): string
+        return "<progress></progress>"
+    end
+end
+
+for _, tag in { "progress", "button" } do
+    print(Component(tag):render())
+end

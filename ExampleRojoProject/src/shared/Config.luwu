@@ -1,0 +1,61 @@
+-- Config.luwu — настройки игры: POD-классы с дефолтами.
+--
+-- POD-класс не имеет primary-конструктора: его создают без аргументов
+-- (`Settings()`) или с переопределениями (`Settings { damage = 2 }`).
+
+class Settings
+    public max_health = 100
+    public damage_multiplier = 1.0
+    public friendly_elements: { string } = { "water", "earth" }
+    public round_time = 120
+    public debug = false
+end
+
+-- Вложенная настройка: урон отдельному виду.
+class ElementRules
+    public multiplier = 1.0
+    public enabled = true
+end
+
+-- Словарь правил: ключ — id элемента.
+class RuleBook
+    public rules: { [string]: ElementRules } = {}
+
+    public function set(self, id: string, rules: ElementRules)
+        self.rules[id] = rules
+    end
+
+    public function multiplier_for(self, id: string): number
+        const rules = self.rules[id]
+        if rules == nil then
+            return 1.0
+        end
+        return rules.multiplier
+    end
+end
+
+const function default_settings(): Settings
+    return Settings()
+end
+
+const function default_rules(): RuleBook
+    const book = RuleBook()
+    book:set("fire", ElementRules { multiplier = 2.0 })
+    book:set("water", ElementRules { multiplier = 0.5 })
+    return book
+end
+
+-- Собираем сводку по настройкам — comprehension по таблице.
+const function summary(settings: Settings): { string }
+    const lines = { for _, element in settings.friendly_elements give `friendly: {element}` }
+    return lines
+end
+
+return {
+    Settings = Settings,
+    ElementRules = ElementRules,
+    RuleBook = RuleBook,
+    default_settings = default_settings,
+    default_rules = default_rules,
+    summary = summary,
+}

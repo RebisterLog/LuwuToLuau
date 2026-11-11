@@ -1,0 +1,40 @@
+trait Base
+    const base = "base"
+
+    function who(self): string
+        return self.base
+    end
+end
+
+trait Middle needs Base
+    function middle(self): string
+        return `middle({self:who()})`
+    end
+end
+
+trait Top needs Middle
+    function top(self): string
+        return `top({self:middle()})`
+    end
+end
+
+class Leaf implements Top
+    const name = "leaf"
+
+    function middle(self): string
+        return "override:" .. Middle.middle(self)
+    end
+end
+
+class Plain implements Top end
+
+const leaf = Leaf()
+print(leaf:top(), leaf:who(), leaf.base, leaf.name)
+
+const plain = Plain()
+print(plain:top(), plain.base)
+
+print(class.implements(leaf, Base))
+print(class.implements(leaf, Middle))
+print(class.implements(leaf, Top))
+print(class.implements(leaf, Base), class.implements(plain, Base))

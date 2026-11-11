@@ -1,0 +1,23 @@
+class Vec2(x: number, y: number)
+    function __add(self, other: Vec2): Vec2
+        return Vec2(self.x + other.x, self.y + other.y)
+    end
+
+    function __mul(self, scalar: number): Vec2
+        return Vec2(self.x * scalar, self.y * scalar)
+    end
+
+    function __eq(self, other: Vec2): boolean
+        return self.x == other.x and self.y == other.y
+    end
+
+    function __tostring(self): string
+        return `({self.x}, {self.y})`
+    end
+end
+
+const a = Vec2(1, 2)
+const b = Vec2(3, 4)
+print(a + b)
+print(a * 3)
+print(a + b == Vec2(4, 6))

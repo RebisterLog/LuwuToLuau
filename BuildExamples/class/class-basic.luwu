@@ -1,0 +1,14 @@
+class Dog(name: string, age: number)
+    function bark(self)
+        print(`{self.name} barked!`)
+    end
+
+    function birthday(self)
+        self.age += 1
+    end
+end
+
+const oreo = Dog("Oreo", 3)
+oreo:bark()
+oreo:birthday()
+print(oreo.age)
