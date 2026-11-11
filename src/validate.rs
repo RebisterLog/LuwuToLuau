@@ -45,6 +45,7 @@ pub fn validate_program(program: &Program) -> Vec<Diagnostic> {
 }
 
 #[derive(Clone, Default)]
+#[allow(dead_code)]
 struct TraitInfo {
     members: HashMap<String, TraitMember>,
     params: Vec<String>,
@@ -52,6 +53,7 @@ struct TraitInfo {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 enum TraitMember {
     ExpectMethod {
         static_method: bool,
@@ -76,9 +78,11 @@ fn collect_traits(program: &Program) -> HashMap<String, TraitInfo> {
     let mut traits = HashMap::new();
     for stmt in &program.stmts {
         if let Stmt::Trait(t) = stmt {
-            let mut info = TraitInfo::default();
-            info.params = t.params.iter().map(|p| p.name.clone()).collect();
-            info.needs = t.needs.iter().map(|n| n.name.clone()).collect();
+            let mut info = TraitInfo {
+                params: t.params.iter().map(|p| p.name.clone()).collect(),
+                needs: t.needs.iter().map(|n| n.name.clone()).collect(),
+                ..TraitInfo::default()
+            };
             for m in &t.members {
                 match m {
                     ClassMember::Field(f) => {
@@ -278,13 +282,13 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                                 )));
                             }
                         }
-                        TraitMember::Method { is_final, .. } => {
-                            if *is_final && class_methods.contains_key(name) {
-                                out.push(Diagnostic::contracts(format!(
-                                    "class `{}` overrides final method `{}` from trait `{}`",
-                                    c.name, name, imp.name
-                                )));
-                            }
+                        TraitMember::Method { is_final, .. }
+                            if *is_final && class_methods.contains_key(name) =>
+                        {
+                            out.push(Diagnostic::contracts(format!(
+                                "class `{}` overrides final method `{}` from trait `{}`",
+                                c.name, name, imp.name
+                            )));
                         }
                         _ => {}
                     }
@@ -508,6 +512,7 @@ struct TypeCtx {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct FuncSig {
     params: Vec<(Option<String>, KnownType)>,
     ret: Option<String>,

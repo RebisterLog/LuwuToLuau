@@ -770,11 +770,7 @@ impl Parser {
 
     fn parse_expr_prec(&mut self, min_prec: u8) -> PResult<Expr> {
         let mut left = self.parse_unary()?;
-        loop {
-            let (op, prec, right_assoc) = match self.binary_op() {
-                Some(x) => x,
-                None => break,
-            };
+        while let Some((op, prec, right_assoc)) = self.binary_op() {
             if prec < min_prec {
                 break;
             }

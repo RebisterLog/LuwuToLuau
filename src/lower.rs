@@ -420,27 +420,28 @@ impl Lowerer {
     ) -> Result<Vec<LStmt>, String> {
         // If the first condition is `x is Ok.(v)` / `Err.(e)`, lower it to a
         // pcall flag check and bind the payload at the start of the branch.
-        if let Some((first_cond, first_body)) = branches.first() {
-            if let Expr::Is {
+        if let Some((
+            Expr::Is {
                 value,
                 kind,
                 binding,
-            } = first_cond
-            {
-                let mut then_body = Vec::new();
-                let cond = self.lower_is_cond(value, kind, binding, &mut then_body)?;
-                then_body.extend(self.lower_block(first_body)?);
-                let else_lowered = if let Some(e) = else_body {
-                    Some(self.lower_block(e)?)
-                } else {
-                    None
-                };
-                return Ok(vec![LStmt::If {
-                    cond,
-                    then_body,
-                    else_body: else_lowered,
-                }]);
-            }
+            },
+            first_body,
+        )) = branches.first()
+        {
+            let mut then_body = Vec::new();
+            let cond = self.lower_is_cond(value, kind, binding, &mut then_body)?;
+            then_body.extend(self.lower_block(first_body)?);
+            let else_lowered = if let Some(e) = else_body {
+                Some(self.lower_block(e)?)
+            } else {
+                None
+            };
+            return Ok(vec![LStmt::If {
+                cond,
+                then_body,
+                else_body: else_lowered,
+            }]);
         }
 
         // Build nested ifs for elseif chains.

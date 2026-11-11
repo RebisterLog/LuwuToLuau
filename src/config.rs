@@ -36,7 +36,7 @@ pub struct Config {
     pub build: BuildConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InputConfig {
     /// Files or directories that hold the Luwu sources.
@@ -149,7 +149,7 @@ impl FailOn {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildConfig {
     /// Which diagnostics block a build/check run. Accepts a preset
@@ -187,15 +187,6 @@ impl Default for Config {
     }
 }
 
-impl Default for InputConfig {
-    fn default() -> Self {
-        Self {
-            paths: Vec::new(),
-            exclude: Vec::new(),
-        }
-    }
-}
-
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
@@ -210,14 +201,6 @@ impl Default for WatchConfig {
     fn default() -> Self {
         Self {
             debounce_ms: default_debounce(),
-        }
-    }
-}
-
-impl Default for BuildConfig {
-    fn default() -> Self {
-        Self {
-            fail_on: FailOn::default(),
         }
     }
 }
