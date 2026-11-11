@@ -40,7 +40,9 @@ impl Lowerer {
         let mut none_returning = HashSet::new();
         collect_none_returning(&program.stmts, &mut none_returning);
         let none_declared = program.stmts.iter().any(|s| match s {
-            Stmt::Decl { patterns, .. } => patterns.iter().any(|p| matches!(p, Pattern::Name(n) if n == "none")),
+            Stmt::Decl { patterns, .. } => patterns
+                .iter()
+                .any(|p| matches!(p, Pattern::Name(n) if n == "none")),
             _ => false,
         });
         Self {
@@ -169,7 +171,13 @@ impl Lowerer {
                 when_cond,
                 then_body,
                 else_body,
-            } => self.lower_if_bind(name, expr, when_cond.as_ref(), then_body, else_body.as_ref()),
+            } => self.lower_if_bind(
+                name,
+                expr,
+                when_cond.as_ref(),
+                then_body,
+                else_body.as_ref(),
+            ),
             Stmt::For {
                 patterns,
                 iter,
@@ -239,7 +247,8 @@ impl Lowerer {
                         exprs: self.lower_try_call(inner)?,
                     },
                 });
-                self.try_bindings.insert(name.clone(), TryBinding { ok, value });
+                self.try_bindings
+                    .insert(name.clone(), TryBinding { ok, value });
                 return Ok(out);
             }
         }
@@ -287,12 +296,15 @@ impl Lowerer {
 
         // Table comprehensions become a fresh table plus a loop.
         if patterns.len() == 1 && exprs.len() == 1 {
-            if let (Pattern::Name(name), Expr::TableComp {
-                patterns: vars,
-                iter,
-                when_cond,
-                give,
-            }) = (&patterns[0], &exprs[0])
+            if let (
+                Pattern::Name(name),
+                Expr::TableComp {
+                    patterns: vars,
+                    iter,
+                    when_cond,
+                    give,
+                },
+            ) = (&patterns[0], &exprs[0])
             {
                 out.push(match kind {
                     BindingKind::Const => LStmt::Const {
@@ -370,17 +382,19 @@ impl Lowerer {
 
         out.extend(prelude);
         out.push(match kind {
-            BindingKind::Const => LStmt::Const { names, exprs: values },
-            BindingKind::Local => LStmt::Local { names, exprs: values },
+            BindingKind::Const => LStmt::Const {
+                names,
+                exprs: values,
+            },
+            BindingKind::Local => LStmt::Local {
+                names,
+                exprs: values,
+            },
         });
         Ok(out)
     }
 
-    fn eval_once(
-        &mut self,
-        expr: &Expr,
-        hint: &str,
-    ) -> Result<(LExpr, Vec<LStmt>), String> {
+    fn eval_once(&mut self, expr: &Expr, hint: &str) -> Result<(LExpr, Vec<LStmt>), String> {
         match expr {
             Expr::Ident(_) | Expr::Field(_, _) | Expr::Index(_, _) => {
                 Ok((self.lower_expr(expr)?, Vec::new()))
@@ -601,14 +615,10 @@ impl Lowerer {
         prelude: &mut Vec<LStmt>,
     ) -> Result<LExpr, String> {
         let base = match value {
-            Expr::Ident(name) => self
-                .try_bindings
-                .get(name)
-                .cloned()
-                .unwrap_or(TryBinding {
-                    ok: name.clone(),
-                    value: name.clone(),
-                }),
+            Expr::Ident(name) => self.try_bindings.get(name).cloned().unwrap_or(TryBinding {
+                ok: name.clone(),
+                value: name.clone(),
+            }),
             _ => TryBinding {
                 ok: "true".into(),
                 value: "nil".into(),
@@ -686,12 +696,15 @@ impl Lowerer {
                 let mut out = Vec::new();
                 for f in fields {
                     match f {
-                        TableField::Named(k, v) => out.push(LField::Named(k.clone(), self.lower_expr(v)?)),
-                        TableField::Positional(v) => out.push(LField::Positional(self.lower_expr(v)?)),
-                        TableField::Computed(k, v) => out.push(LField::Computed(
-                            self.lower_expr(k)?,
-                            self.lower_expr(v)?,
-                        )),
+                        TableField::Named(k, v) => {
+                            out.push(LField::Named(k.clone(), self.lower_expr(v)?))
+                        }
+                        TableField::Positional(v) => {
+                            out.push(LField::Positional(self.lower_expr(v)?))
+                        }
+                        TableField::Computed(k, v) => {
+                            out.push(LField::Computed(self.lower_expr(k)?, self.lower_expr(v)?))
+                        }
                     }
                 }
                 Ok(LExpr::Table(out))
@@ -710,16 +723,11 @@ impl Lowerer {
                 }
                 Ok(LExpr::Table(out))
             }
-            Expr::Index(base, idx) => Ok(LExpr::index(
-                self.lower_expr(base)?,
-                self.lower_expr(idx)?,
-            )),
+            Expr::Index(base, idx) => {
+                Ok(LExpr::index(self.lower_expr(base)?, self.lower_expr(idx)?))
+            }
             Expr::Field(base, name) => Ok(LExpr::field(self.lower_expr(base)?, name.clone())),
-            Expr::Call {
-                func,
-                args,
-                method,
-            } => self.lower_call(func, args, *method),
+            Expr::Call { func, args, method } => self.lower_call(func, args, *method),
             Expr::Unary { op, expr } => Ok(LExpr::Unary {
                 op: op.clone(),
                 expr: Box::new(self.lower_expr(expr)?),
@@ -791,12 +799,7 @@ impl Lowerer {
         }
     }
 
-    fn lower_call(
-        &mut self,
-        func: &Expr,
-        args: &[Expr],
-        method: bool,
-    ) -> Result<LExpr, String> {
+    fn lower_call(&mut self, func: &Expr, args: &[Expr], method: bool) -> Result<LExpr, String> {
         // Luwu's standard-library extensions.
         if let Expr::Field(base, name) = func {
             if let Expr::Ident(ns) = base.as_ref() {
@@ -806,10 +809,7 @@ impl Lowerer {
                     for a in args {
                         call_args.push(self.lower_expr(a)?);
                     }
-                    return Ok(LExpr::call(
-                        LExpr::ident("__luwu_table_drop"),
-                        call_args,
-                    ));
+                    return Ok(LExpr::call(LExpr::ident("__luwu_table_drop"), call_args));
                 }
                 if ns == "class" {
                     return self.lower_class_call(name, args);
@@ -936,16 +936,11 @@ impl Lowerer {
         Ok((names, defaults))
     }
 
-    fn lower_method(
-        &mut self,
-        owner: &str,
-        method: &MethodDecl,
-    ) -> Result<Vec<LStmt>, String> {
+    fn lower_method(&mut self, owner: &str, method: &MethodDecl) -> Result<Vec<LStmt>, String> {
         if method.is_expect {
             return Ok(Vec::new());
         }
-        let has_self = !method.is_static
-            && method.params.first().is_some_and(|p| p.name == "self");
+        let has_self = !method.is_static && method.params.first().is_some_and(|p| p.name == "self");
         let visible_params: Vec<Param> = if has_self {
             method.params[1..].to_vec()
         } else {
@@ -1102,10 +1097,8 @@ impl Lowerer {
         }
 
         // Constructor.
-        let own_field_names: HashSet<String> =
-            fields.iter().map(|f| f.name.clone()).collect();
-        let param_names: HashSet<String> =
-            class.params.iter().map(|p| p.name.clone()).collect();
+        let own_field_names: HashSet<String> = fields.iter().map(|f| f.name.clone()).collect();
+        let param_names: HashSet<String> = class.params.iter().map(|p| p.name.clone()).collect();
         let trait_field_names: HashSet<String> =
             all_trait_fields.iter().map(|(n, _)| n.clone()).collect();
 
@@ -1165,7 +1158,10 @@ impl Lowerer {
                     names: vec!["self".into()],
                     exprs: vec![LExpr::call(
                         LExpr::ident("setmetatable"),
-                        vec![LExpr::Table(defaults_table), LExpr::ident(class.name.clone())],
+                        vec![
+                            LExpr::Table(defaults_table),
+                            LExpr::ident(class.name.clone()),
+                        ],
                     )],
                 });
             } else {
@@ -1202,7 +1198,10 @@ impl Lowerer {
                 names: vec!["self".into()],
                 exprs: vec![LExpr::call(
                     LExpr::ident("setmetatable"),
-                    vec![LExpr::Table(defaults_table), LExpr::ident(class.name.clone())],
+                    vec![
+                        LExpr::Table(defaults_table),
+                        LExpr::ident(class.name.clone()),
+                    ],
                 )],
             });
             if !fields.is_empty() {
@@ -1214,10 +1213,7 @@ impl Lowerer {
                         right: Box::new(LExpr::Table(Vec::new())),
                     },
                     body: vec![LStmt::Assign {
-                        targets: vec![LExpr::index(
-                            LExpr::ident("self"),
-                            LExpr::ident("key"),
-                        )],
+                        targets: vec![LExpr::index(LExpr::ident("self"), LExpr::ident("key"))],
                         op: None,
                         exprs: vec![LExpr::ident("value")],
                     }],
@@ -1282,10 +1278,7 @@ impl Lowerer {
                 continue;
             }
             out.push(LStmt::Assign {
-                targets: vec![LExpr::field(
-                    LExpr::ident(class.name.clone()),
-                    name.clone(),
-                )],
+                targets: vec![LExpr::field(LExpr::ident(class.name.clone()), name.clone())],
                 op: None,
                 exprs: vec![LExpr::field(source.clone(), name.clone())],
             });
@@ -1572,10 +1565,7 @@ impl Lowerer {
             }
             let mut table_fields = Vec::new();
             for p in &trait_decl.params {
-                table_fields.push(LField::Named(
-                    p.name.clone(),
-                    LExpr::ident(p.name.clone()),
-                ));
+                table_fields.push(LField::Named(p.name.clone(), LExpr::ident(p.name.clone())));
             }
             for f in &fields {
                 if let Some(d) = &f.default {
@@ -1652,7 +1642,9 @@ impl Lowerer {
                 let (params, defaults) = self.lower_params(&implemented.params)?;
                 let mut body = defaults;
                 body.extend(
-                    self.with_function_scope(|this| this.lower_implemented_body(&implemented.body))?,
+                    self.with_function_scope(|this| {
+                        this.lower_implemented_body(&implemented.body)
+                    })?,
                 );
                 out.push(LStmt::Function {
                     prefix: "const function implemented".into(),
@@ -1677,7 +1669,10 @@ impl Lowerer {
         for f in &fields {
             if let Some(d) = &f.default {
                 out.push(LStmt::Assign {
-                    targets: vec![LExpr::field(LExpr::ident(trait_decl.name.clone()), f.name.clone())],
+                    targets: vec![LExpr::field(
+                        LExpr::ident(trait_decl.name.clone()),
+                        f.name.clone(),
+                    )],
                     op: None,
                     exprs: vec![self.lower_expr(d)?],
                 });
@@ -1693,18 +1688,13 @@ impl Lowerer {
             // list. The generated __create loops over the list's values.
             if let Stmt::Assign { targets, op, exprs } = stmt {
                 if op.is_none() && targets.len() == 1 && exprs.len() == 1 {
-                    if let (Expr::Index(base, key), Expr::Bool(true)) =
-                        (&targets[0], &exprs[0])
-                    {
+                    if let (Expr::Index(base, key), Expr::Bool(true)) = (&targets[0], &exprs[0]) {
                         if let (Expr::Ident(reg), Expr::Ident(key_name)) =
                             (base.as_ref(), key.as_ref())
                         {
                             out.push(LStmt::Call(LExpr::call(
                                 LExpr::field(LExpr::ident("table"), "insert"),
-                                vec![
-                                    LExpr::ident(reg.clone()),
-                                    LExpr::ident(key_name.clone()),
-                                ],
+                                vec![LExpr::ident(reg.clone()), LExpr::ident(key_name.clone())],
                             )));
                             continue;
                         }
@@ -1812,9 +1802,10 @@ fn collect_traits(stmts: &[Stmt], traits: &mut HashMap<String, TraitDecl>) {
                     collect_traits(b, traits);
                 }
             }
-            Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Do { body } => {
-                collect_traits(body, traits)
-            }
+            Stmt::For { body, .. }
+            | Stmt::While { body, .. }
+            | Stmt::Repeat { body, .. }
+            | Stmt::Do { body } => collect_traits(body, traits),
             _ => {}
         }
     }
@@ -2037,9 +2028,10 @@ fn collect_none_returning(stmts: &[Stmt], out: &mut HashSet<String>) {
                     collect_none_returning(b, out);
                 }
             }
-            Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Do { body } => {
-                collect_none_returning(body, out)
-            }
+            Stmt::For { body, .. }
+            | Stmt::While { body, .. }
+            | Stmt::Repeat { body, .. }
+            | Stmt::Do { body } => collect_none_returning(body, out),
             Stmt::Class(c) => {
                 for m in &c.members {
                     if let ClassMember::Method(m) = m {

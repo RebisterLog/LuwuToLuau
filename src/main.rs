@@ -250,7 +250,11 @@ fn load_config(
     config: Option<&Path>,
     no_config: bool,
 ) -> Result<LoadedConfig, config::ConfigError> {
-    config::load(config, no_config, &std::env::current_dir().unwrap_or_default())
+    config::load(
+        config,
+        no_config,
+        &std::env::current_dir().unwrap_or_default(),
+    )
 }
 
 fn resolve(
@@ -378,7 +382,11 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
     for source in sources.into_iter() {
         let out_path = map_output_path(&resolved.out, &source.rel);
         match compile_file(&source.file, &resolved.fail_on) {
-            Ok(code) => built.push(Built { source, out_path, code }),
+            Ok(code) => built.push(Built {
+                source,
+                out_path,
+                code,
+            }),
             Err(mut es) => errors.append(&mut es),
         }
     }
@@ -417,7 +425,11 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
                 return Err(format!("cannot write `{}`: {e}", item.out_path.display()));
             }
             if !args.quiet {
-                println!("{} -> {}", item.source.file.display(), item.out_path.display());
+                println!(
+                    "{} -> {}",
+                    item.source.file.display(),
+                    item.out_path.display()
+                );
             }
         }
     }
@@ -469,13 +481,13 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
         match (check_only, args.dry_run) {
             (true, _) => println!("checked {compiled} file(s)"),
             (false, true) => {
-                println!("would build {compiled} file(s) into {}", resolved.out.display())
+                println!(
+                    "would build {compiled} file(s) into {}",
+                    resolved.out.display()
+                )
             }
             (false, false) => {
-                println!(
-                    "built {compiled} file(s) into {}",
-                    resolved.out.display()
-                );
+                println!("built {compiled} file(s) into {}", resolved.out.display());
                 if copy_assets {
                     println!("copied {copied} file(s)");
                 }
@@ -652,21 +664,14 @@ const SAMPLE_SHARED: &str = "-- Shared module: becomes a ModuleScript (build/sha
 const SAMPLE_SERVER: &str = "-- Server script: becomes a Script (build/server/init.server.luau)\n\
                              print(\"server started\")\n";
 
-const SAMPLE_CLIENT: &str = "-- Client script: becomes a LocalScript (build/client/init.client.luau)\n\
+const SAMPLE_CLIENT: &str =
+    "-- Client script: becomes a LocalScript (build/client/init.client.luau)\n\
                              print(\"client started\")\n";
 
 fn run_init(args: &InitArgs) -> Result<(), String> {
-    let dir = args
-        .path
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("."));
+    let dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
     let name = args.name.clone();
-    scaffold(
-        &dir,
-        args.rojo,
-        args.force,
-        name.as_deref(),
-    )?;
+    scaffold(&dir, args.rojo, args.force, name.as_deref())?;
 
     println!();
     println!("next steps:");
@@ -763,8 +768,12 @@ fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
 }
 
 fn run_install(args: &InstallArgs) -> Result<(), String> {
-    let dir = args.dir.clone().unwrap_or_else(install::default_install_dir);
-    let exe = std::env::current_exe().map_err(|e| format!("cannot locate the running binary: {e}"))?;
+    let dir = args
+        .dir
+        .clone()
+        .unwrap_or_else(install::default_install_dir);
+    let exe =
+        std::env::current_exe().map_err(|e| format!("cannot locate the running binary: {e}"))?;
     let target = dir.join(install::binary_name());
 
     let already_there = same_path(&exe, &target);
@@ -801,11 +810,17 @@ fn run_install(args: &InstallArgs) -> Result<(), String> {
 }
 
 fn run_uninstall(args: &UninstallArgs) -> Result<(), String> {
-    let dir = args.dir.clone().unwrap_or_else(install::default_install_dir);
+    let dir = args
+        .dir
+        .clone()
+        .unwrap_or_else(install::default_install_dir);
     let target = dir.join(install::binary_name());
 
     let current = std::env::current_exe().ok();
-    let running_installed = current.as_ref().map(|c| same_path(c, &target)).unwrap_or(false);
+    let running_installed = current
+        .as_ref()
+        .map(|c| same_path(c, &target))
+        .unwrap_or(false);
 
     if running_installed {
         // On Windows the running binary is locked; removing it would fail.
@@ -892,9 +907,7 @@ fn collect_all(
         collect_rec(path, path, excludes, out_dir, &mut collected)?;
     }
 
-    collected
-        .sources
-        .sort_by(|a, b| a.rel.cmp(&b.rel));
+    collected.sources.sort_by(|a, b| a.rel.cmp(&b.rel));
     collected.assets.sort_by(|a, b| a.rel.cmp(&b.rel));
     collected.dirs.sort();
     Ok(collected)
@@ -907,8 +920,8 @@ fn collect_rec(
     out_dir: &Path,
     collected: &mut Collected,
 ) -> Result<(), String> {
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("cannot read directory `{}`: {e}", dir.display()))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("cannot read directory `{}`: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("cannot read directory entry: {e}"))?;
         let path = entry.path();
@@ -945,7 +958,10 @@ fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 fn map_output_path(out_dir: &Path, rel: &Path) -> PathBuf {
-    let name = rel.file_name().and_then(|n| n.to_str()).unwrap_or("out.luwu");
+    let name = rel
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("out.luwu");
     let new_name = if let Some(stem) = name.strip_suffix(".luwu") {
         format!("{stem}.luau")
     } else {
@@ -960,7 +976,8 @@ fn map_output_path(out_dir: &Path, rel: &Path) -> PathBuf {
 }
 
 fn compile_file(file: &Path, fail_on: &config::FailOnFlags) -> Result<String, Vec<String>> {
-    let source = fs::read_to_string(file).map_err(|e| vec![format!("cannot read `{}`: {e}", file.display())])?;
+    let source = fs::read_to_string(file)
+        .map_err(|e| vec![format!("cannot read `{}`: {e}", file.display())])?;
     let tokens = lexer::lex(&source).map_err(|e| vec![format!("{}: {e}", file.display())])?;
     let mut parser = LuwuParser::new(tokens);
     let program = parser
@@ -1239,8 +1256,14 @@ print(class.fields(Robot()), class.member(Robot, "hello").kind)
 
         assert!(root.join("luwu.toml").exists(), "config is created");
         assert!(root.join("src/shared/init.luwu").exists(), "shared stub");
-        assert!(root.join("src/server/init.server.luwu").exists(), "server stub");
-        assert!(root.join("src/client/init.client.luwu").exists(), "client stub");
+        assert!(
+            root.join("src/server/init.server.luwu").exists(),
+            "server stub"
+        );
+        assert!(
+            root.join("src/client/init.client.luwu").exists(),
+            "client stub"
+        );
         assert!(root.join("default.project.json").exists(), "rojo project");
 
         let project = fs::read_to_string(root.join("default.project.json")).unwrap();
@@ -1307,10 +1330,7 @@ print(class.fields(Robot()), class.member(Robot, "hello").kind)
             out.join("world/Arena.model.json").exists(),
             "models are copied"
         );
-        assert!(
-            out.join("assets/logo.png").exists(),
-            "assets are copied"
-        );
+        assert!(out.join("assets/logo.png").exists(), "assets are copied");
         assert!(out.join("empty").is_dir(), "empty folders are kept");
 
         // With --no-assets only the Luau files are produced.
@@ -1367,9 +1387,7 @@ end
                     clean: true,
                     copy_assets: true,
                 },
-                watch: config::WatchConfig {
-                    debounce_ms: 250,
-                },
+                watch: config::WatchConfig { debounce_ms: 250 },
                 build: config::BuildConfig::default(),
             },
             path: Some(PathBuf::from("luwu.toml")),

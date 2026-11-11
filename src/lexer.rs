@@ -193,7 +193,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
             // A dot followed by digits after an expression is parsed as `.1`
             // field access by the parser, not as a number here.
             let mut s = String::new();
-            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.') {
+            while i < chars.len()
+                && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.')
+            {
                 // Do not swallow `..` (concat).
                 if chars[i] == '.' && peek(i + 1) == Some('.') {
                     break;
@@ -231,7 +233,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
         // Multi-character symbols.
         let rest: String = chars[i..(i + 4).min(chars.len())].iter().collect();
         let mut matched = None;
-        for sym in ["...", "..=", "..", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "^=", "::", "->", "<-", "<+", "//"] {
+        for sym in [
+            "...", "..=", "..", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "^=", "::",
+            "->", "<-", "<+", "//",
+        ] {
             if rest.starts_with(sym) {
                 matched = Some(sym);
                 break;

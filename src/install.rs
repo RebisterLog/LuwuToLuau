@@ -16,14 +16,17 @@ pub fn default_install_dir() -> PathBuf {
 
 /// The file name of the binary on this platform.
 pub fn binary_name() -> &'static str {
-    if cfg!(windows) { "luwu.exe" } else { "luwu" }
+    if cfg!(windows) {
+        "luwu.exe"
+    } else {
+        "luwu"
+    }
 }
 
 /// Copies `source` into `dir` and returns the installed path.
 /// When `source` is already the installed binary, the copy is skipped.
 pub fn install_binary(source: &Path, dir: &Path) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(dir)
-        .map_err(|e| format!("cannot create `{}`: {e}", dir.display()))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create `{}`: {e}", dir.display()))?;
 
     let target = dir.join(binary_name());
     if same_path(source, &target) {

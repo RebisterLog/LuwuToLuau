@@ -53,10 +53,23 @@ struct TraitInfo {
 
 #[derive(Clone)]
 enum TraitMember {
-    ExpectMethod { static_method: bool, param_count: usize, return_type: Option<String> },
-    ExpectField { ty: Option<String> },
-    Method { is_final: bool, static_method: bool, param_count: usize, return_type: Option<String> },
-    Field { ty: Option<String> },
+    ExpectMethod {
+        static_method: bool,
+        param_count: usize,
+        return_type: Option<String>,
+    },
+    ExpectField {
+        ty: Option<String>,
+    },
+    Method {
+        is_final: bool,
+        static_method: bool,
+        param_count: usize,
+        return_type: Option<String>,
+    },
+    Field {
+        ty: Option<String>,
+    },
 }
 
 fn collect_traits(program: &Program) -> HashMap<String, TraitInfo> {
@@ -75,15 +88,16 @@ fn collect_traits(program: &Program) -> HashMap<String, TraitInfo> {
                                 TraitMember::ExpectField { ty: f.ty.clone() },
                             );
                         } else {
-                            info.members.insert(
-                                f.name.clone(),
-                                TraitMember::Field { ty: f.ty.clone() },
-                            );
+                            info.members
+                                .insert(f.name.clone(), TraitMember::Field { ty: f.ty.clone() });
                         }
                     }
                     ClassMember::Method(m) => {
-                        let static_method = m.is_static || !m.params.first().is_some_and(|p| p.name == "self");
-                        let param_count = if !static_method && m.params.first().is_some_and(|p| p.name == "self") {
+                        let static_method =
+                            m.is_static || !m.params.first().is_some_and(|p| p.name == "self");
+                        let param_count = if !static_method
+                            && m.params.first().is_some_and(|p| p.name == "self")
+                        {
                             m.params.len().saturating_sub(1)
                         } else {
                             m.params.len()
@@ -156,8 +170,12 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
             }
             for m in &c.members {
                 match m {
-                    ClassMember::Field(f) => { class_fields.insert(f.name.clone(), f); }
-                    ClassMember::Method(m) => { class_methods.insert(m.name.clone(), m); }
+                    ClassMember::Field(f) => {
+                        class_fields.insert(f.name.clone(), f);
+                    }
+                    ClassMember::Method(m) => {
+                        class_methods.insert(m.name.clone(), m);
+                    }
                 }
             }
 
@@ -175,7 +193,10 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                 for (name, member) in &all_members {
                     match member {
                         TraitMember::ExpectField { ty } => {
-                            let provided = class_fields.get(name).map(|f| !f.is_expect).unwrap_or(false)
+                            let provided = class_fields
+                                .get(name)
+                                .map(|f| !f.is_expect)
+                                .unwrap_or(false)
                                 || ctor_params.contains_key(name)
                                 || class_methods.contains_key(name)
                                 || has_provided_by_trait(name, &all_members);
@@ -186,13 +207,31 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                                 )));
                             } else if let Some(cf) = class_fields.get(name) {
                                 if !cf.is_expect {
-                                    check_type_compat_field(name, ty.as_deref(), cf.ty.as_deref(), &c.name, &imp.name, out);
+                                    check_type_compat_field(
+                                        name,
+                                        ty.as_deref(),
+                                        cf.ty.as_deref(),
+                                        &c.name,
+                                        &imp.name,
+                                        out,
+                                    );
                                 }
                             } else if let Some(cp) = ctor_params.get(name) {
-                                check_type_compat_field(name, ty.as_deref(), cp.ty.as_deref(), &c.name, &imp.name, out);
+                                check_type_compat_field(
+                                    name,
+                                    ty.as_deref(),
+                                    cp.ty.as_deref(),
+                                    &c.name,
+                                    &imp.name,
+                                    out,
+                                );
                             }
                         }
-                        TraitMember::ExpectMethod { static_method, param_count, return_type } => {
+                        TraitMember::ExpectMethod {
+                            static_method,
+                            param_count,
+                            return_type,
+                        } => {
                             if let Some(cm) = class_methods.get(name) {
                                 if cm.is_expect {
                                     out.push(Diagnostic::contracts(format!(
@@ -201,7 +240,8 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                                     )));
                                     continue;
                                 }
-                                let cm_static = cm.is_static || !cm.params.first().is_some_and(|p| p.name == "self");
+                                let cm_static = cm.is_static
+                                    || !cm.params.first().is_some_and(|p| p.name == "self");
                                 if cm_static != *static_method {
                                     out.push(Diagnostic::contracts(format!(
                                         "class `{}` implements method `{}` with wrong kind (expected {})",
@@ -210,7 +250,9 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                                         if *static_method { "static" } else { "instance" }
                                     )));
                                 }
-                                let cm_count = if !cm_static && cm.params.first().is_some_and(|p| p.name == "self") {
+                                let cm_count = if !cm_static
+                                    && cm.params.first().is_some_and(|p| p.name == "self")
+                                {
                                     cm.params.len().saturating_sub(1)
                                 } else {
                                     cm.params.len()
@@ -221,7 +263,14 @@ fn validate_contracts(program: &Program, out: &mut Vec<Diagnostic>) {
                                         c.name, name, cm_count, param_count
                                     )));
                                 }
-                                check_return_type_compat(name, return_type.as_deref(), cm.return_type.as_deref(), &c.name, &imp.name, out);
+                                check_return_type_compat(
+                                    name,
+                                    return_type.as_deref(),
+                                    cm.return_type.as_deref(),
+                                    &c.name,
+                                    &imp.name,
+                                    out,
+                                );
                             } else if !has_provided_by_trait(name, &all_members) {
                                 out.push(Diagnostic::contracts(format!(
                                     "class `{}` does not implement expected method `{}` required by trait `{}`",
@@ -253,7 +302,10 @@ fn has_provided_by_trait(name: &str, members: &HashMap<String, TraitMember>) -> 
 }
 
 fn normalize_type(ty: &str) -> String {
-    ty.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase()
+    ty.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
 }
 
 fn types_explicitly_incompatible(expected: &str, actual: &str) -> bool {
@@ -263,10 +315,33 @@ fn types_explicitly_incompatible(expected: &str, actual: &str) -> bool {
         return false;
     }
     // Don't fight complex/generic/union types in this lightweight pass.
-    if e.contains('|') || a.contains('|') || e.contains('{') || a.contains('{') || e.contains('<') || a.contains('<') || e.contains("->") || a.contains("->") {
+    if e.contains('|')
+        || a.contains('|')
+        || e.contains('{')
+        || a.contains('{')
+        || e.contains('<')
+        || a.contains('<')
+        || e.contains("->")
+        || a.contains("->")
+    {
         return false;
     }
-    let simple = |t: &str| matches!(t, "string" | "number" | "boolean" | "nil" | "none" | "any" | "unknown" | "never" | "thread" | "userdata" | "buffer");
+    let simple = |t: &str| {
+        matches!(
+            t,
+            "string"
+                | "number"
+                | "boolean"
+                | "nil"
+                | "none"
+                | "any"
+                | "unknown"
+                | "never"
+                | "thread"
+                | "userdata"
+                | "buffer"
+        )
+    };
     if e == "any" || e == "unknown" || a == "any" || a == "unknown" {
         return false;
     }
@@ -289,7 +364,11 @@ fn check_type_compat_field(
         if types_explicitly_incompatible(e, a) {
             out.push(Diagnostic::types(format!(
                 "class `{}` member `{}` has type `{}` but trait `{}` expects `{}`",
-                class, name, actual.unwrap_or(""), trait_name, expected.unwrap_or("")
+                class,
+                name,
+                actual.unwrap_or(""),
+                trait_name,
+                expected.unwrap_or("")
             )));
         }
     }
@@ -307,7 +386,11 @@ fn check_return_type_compat(
         if types_explicitly_incompatible(e, a) {
             out.push(Diagnostic::types(format!(
                 "class `{}` method `{}` returns `{}` but trait `{}` expects `{}`",
-                class, name, actual.unwrap_or(""), trait_name, expected.unwrap_or("")
+                class,
+                name,
+                actual.unwrap_or(""),
+                trait_name,
+                expected.unwrap_or("")
             )));
         }
     }
@@ -394,8 +477,8 @@ fn check_assignable(
             | (KnownType::Boolean, KnownType::String)
     );
 
-    let nil_ok = matches!(value, KnownType::Nil)
-        && target_ann.map(is_optional_annotation).unwrap_or(false);
+    let nil_ok =
+        matches!(value, KnownType::Nil) && target_ann.map(is_optional_annotation).unwrap_or(false);
 
     if is_clear_mismatch && !nil_ok {
         out.push(Diagnostic::types(format!(
@@ -431,10 +514,18 @@ struct FuncSig {
 }
 
 impl TypeCtx {
-    fn new() -> Self { Self { vars: HashMap::new(), funcs: HashMap::new() } }
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+            funcs: HashMap::new(),
+        }
+    }
 
     fn child(&self) -> Self {
-        Self { vars: self.vars.clone(), funcs: self.funcs.clone() }
+        Self {
+            vars: self.vars.clone(),
+            funcs: self.funcs.clone(),
+        }
     }
 }
 
@@ -442,47 +533,111 @@ fn validate_types(program: &Program, out: &mut Vec<Diagnostic>) {
     let mut ctx = TypeCtx::new();
     // Pre-collect top-level function signatures.
     for stmt in &program.stmts {
-        if let Stmt::Function { name, params, return_type, .. } = stmt {
-            ctx.funcs.insert(name.clone(), FuncSig {
-                params: params.iter().map(|p| (p.ty.clone(), p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown))).collect(),
-                ret: return_type.clone(),
-            });
+        if let Stmt::Function {
+            name,
+            params,
+            return_type,
+            ..
+        } = stmt
+        {
+            ctx.funcs.insert(
+                name.clone(),
+                FuncSig {
+                    params: params
+                        .iter()
+                        .map(|p| {
+                            (
+                                p.ty.clone(),
+                                p.ty.as_deref()
+                                    .map(known_from_annotation)
+                                    .unwrap_or(KnownType::Unknown),
+                            )
+                        })
+                        .collect(),
+                    ret: return_type.clone(),
+                },
+            );
         }
     }
     validate_stmts(&program.stmts, &mut ctx, None, out);
 }
 
-fn validate_stmts(stmts: &[Stmt], ctx: &mut TypeCtx, current_ret: Option<&str>, out: &mut Vec<Diagnostic>) {
+fn validate_stmts(
+    stmts: &[Stmt],
+    ctx: &mut TypeCtx,
+    current_ret: Option<&str>,
+    out: &mut Vec<Diagnostic>,
+) {
     for stmt in stmts {
         validate_stmt(stmt, ctx, current_ret, out);
     }
 }
 
-fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out: &mut Vec<Diagnostic>) {
+fn validate_stmt(
+    stmt: &Stmt,
+    ctx: &mut TypeCtx,
+    current_ret: Option<&str>,
+    out: &mut Vec<Diagnostic>,
+) {
     match stmt {
-        Stmt::Decl { patterns, exprs, ty, .. } => {
+        Stmt::Decl {
+            patterns,
+            exprs,
+            ty,
+            ..
+        } => {
             for (i, p) in patterns.iter().enumerate() {
                 if let Pattern::Name(name) = p {
                     let ann = ty.clone();
-                    let kt = ann.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown);
+                    let kt = ann
+                        .as_deref()
+                        .map(known_from_annotation)
+                        .unwrap_or(KnownType::Unknown);
                     if let (Some(ann_s), Some(expr)) = (&ann, exprs.get(i)) {
                         let vt = expr_known_type(expr, ctx);
-                        check_assignable(&kt, Some(ann_s), &vt, &format!("declaration of `{}`", name), out);
+                        check_assignable(
+                            &kt,
+                            Some(ann_s),
+                            &vt,
+                            &format!("declaration of `{}`", name),
+                            out,
+                        );
                     }
                     ctx.vars.insert(name.clone(), (ann, kt));
                 }
             }
-            for e in exprs { validate_expr(e, ctx, out); }
+            for e in exprs {
+                validate_expr(e, ctx, out);
+            }
         }
-        Stmt::Function { name, params, body, return_type, .. } => {
+        Stmt::Function {
+            name,
+            params,
+            body,
+            return_type,
+            ..
+        } => {
             let sig = FuncSig {
-                params: params.iter().map(|p| (p.ty.clone(), p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown))).collect(),
+                params: params
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.ty.clone(),
+                            p.ty.as_deref()
+                                .map(known_from_annotation)
+                                .unwrap_or(KnownType::Unknown),
+                        )
+                    })
+                    .collect(),
                 ret: return_type.clone(),
             };
             ctx.funcs.insert(name.clone(), sig.clone());
             let mut fctx = ctx.child();
             for p in params {
-                let kt = p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown);
+                let kt =
+                    p.ty.as_deref()
+                        .map(known_from_annotation)
+                        .unwrap_or(KnownType::Unknown);
                 fctx.vars.insert(p.name.clone(), (p.ty.clone(), kt));
             }
             validate_stmts(body, &mut fctx, return_type.as_deref(), out);
@@ -493,13 +648,23 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                     if let Some((ann, kt)) = ctx.vars.get(name).cloned() {
                         if let (Some(ann_s), Some(expr)) = (ann.as_ref(), exprs.get(i)) {
                             let vt = expr_known_type(expr, ctx);
-                            check_assignable(&kt, Some(ann_s), &vt, &format!("assignment to `{}`", name), out);
+                            check_assignable(
+                                &kt,
+                                Some(ann_s),
+                                &vt,
+                                &format!("assignment to `{}`", name),
+                                out,
+                            );
                         }
                     }
                 }
             }
-            for e in targets { validate_expr(e, ctx, out); }
-            for e in exprs { validate_expr(e, ctx, out); }
+            for e in targets {
+                validate_expr(e, ctx, out);
+            }
+            for e in exprs {
+                validate_expr(e, ctx, out);
+            }
         }
         Stmt::Return(exprs) => {
             if let Some(ret_ann) = current_ret {
@@ -509,9 +674,14 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                     check_assignable(&kt, Some(ret_ann), &vt, "return value", out);
                 }
             }
-            for e in exprs { validate_expr(e, ctx, out); }
+            for e in exprs {
+                validate_expr(e, ctx, out);
+            }
         }
-        Stmt::If { branches, else_body } => {
+        Stmt::If {
+            branches,
+            else_body,
+        } => {
             for (c, b) in branches {
                 validate_expr(c, ctx, out);
                 let mut bctx = ctx.child();
@@ -522,9 +692,17 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                 validate_stmts(b, &mut bctx, current_ret, out);
             }
         }
-        Stmt::IfBind { expr, when_cond, then_body, else_body, .. } => {
+        Stmt::IfBind {
+            expr,
+            when_cond,
+            then_body,
+            else_body,
+            ..
+        } => {
             validate_expr(expr, ctx, out);
-            if let Some(c) = when_cond { validate_expr(c, ctx, out); }
+            if let Some(c) = when_cond {
+                validate_expr(c, ctx, out);
+            }
             let mut bctx = ctx.child();
             validate_stmts(then_body, &mut bctx, current_ret, out);
             if let Some(b) = else_body {
@@ -532,11 +710,18 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                 validate_stmts(b, &mut bctx, current_ret, out);
             }
         }
-        Stmt::For { iter, when_clause, body, .. } => {
+        Stmt::For {
+            iter,
+            when_clause,
+            body,
+            ..
+        } => {
             validate_expr(iter, ctx, out);
             if let Some(w) = when_clause {
                 match w {
-                    WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => validate_expr(e, ctx, out),
+                    WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => {
+                        validate_expr(e, ctx, out)
+                    }
                 }
             }
             let mut bctx = ctx.child();
@@ -564,7 +749,10 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                     ClassMember::Method(md) => {
                         let mut mctx = ctx.child();
                         for p in &md.params {
-                            let kt = p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown);
+                            let kt =
+                                p.ty.as_deref()
+                                    .map(known_from_annotation)
+                                    .unwrap_or(KnownType::Unknown);
                             mctx.vars.insert(p.name.clone(), (p.ty.clone(), kt));
                         }
                         validate_stmts(&md.body, &mut mctx, md.return_type.as_deref(), out);
@@ -573,9 +761,17 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                         if let (Some(ann), Some(def)) = (&f.ty, &f.default) {
                             let kt = known_from_annotation(ann);
                             let vt = expr_known_type(def, ctx);
-                            check_assignable(&kt, Some(ann), &vt, &format!("field `{}` default", f.name), out);
+                            check_assignable(
+                                &kt,
+                                Some(ann),
+                                &vt,
+                                &format!("field `{}` default", f.name),
+                                out,
+                            );
                         }
-                        if let Some(d) = &f.default { validate_expr(d, ctx, out); }
+                        if let Some(d) = &f.default {
+                            validate_expr(d, ctx, out);
+                        }
                     }
                 }
             }
@@ -586,7 +782,10 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                     ClassMember::Method(md) => {
                         let mut mctx = ctx.child();
                         for p in &md.params {
-                            let kt = p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown);
+                            let kt =
+                                p.ty.as_deref()
+                                    .map(known_from_annotation)
+                                    .unwrap_or(KnownType::Unknown);
                             mctx.vars.insert(p.name.clone(), (p.ty.clone(), kt));
                         }
                         validate_stmts(&md.body, &mut mctx, md.return_type.as_deref(), out);
@@ -595,9 +794,17 @@ fn validate_stmt(stmt: &Stmt, ctx: &mut TypeCtx, current_ret: Option<&str>, out:
                         if let (Some(ann), Some(def)) = (&f.ty, &f.default) {
                             let kt = known_from_annotation(ann);
                             let vt = expr_known_type(def, ctx);
-                            check_assignable(&kt, Some(ann), &vt, &format!("field `{}` default", f.name), out);
+                            check_assignable(
+                                &kt,
+                                Some(ann),
+                                &vt,
+                                &format!("field `{}` default", f.name),
+                                out,
+                            );
                         }
-                        if let Some(d) = &f.default { validate_expr(d, ctx, out); }
+                        if let Some(d) = &f.default {
+                            validate_expr(d, ctx, out);
+                        }
                     }
                 }
             }
@@ -615,44 +822,86 @@ fn validate_expr(expr: &Expr, ctx: &TypeCtx, out: &mut Vec<Diagnostic>) {
                     for (i, arg) in args.iter().enumerate() {
                         if let Some((Some(ann), kt)) = sig.params.get(i) {
                             let vt = expr_known_type(arg, ctx);
-                            check_assignable(kt, Some(ann), &vt, &format!("argument {} of `{}`", i + 1, name), out);
+                            check_assignable(
+                                kt,
+                                Some(ann),
+                                &vt,
+                                &format!("argument {} of `{}`", i + 1, name),
+                                out,
+                            );
                         }
                     }
                 }
             }
             validate_expr(func, ctx, out);
-            for a in args { validate_expr(a, ctx, out); }
+            for a in args {
+                validate_expr(a, ctx, out);
+            }
         }
-        Expr::Function { params, body, return_type } => {
+        Expr::Function {
+            params,
+            body,
+            return_type,
+        } => {
             let mut fctx = ctx.child();
             for p in params {
-                let kt = p.ty.as_deref().map(known_from_annotation).unwrap_or(KnownType::Unknown);
+                let kt =
+                    p.ty.as_deref()
+                        .map(known_from_annotation)
+                        .unwrap_or(KnownType::Unknown);
                 fctx.vars.insert(p.name.clone(), (p.ty.clone(), kt));
             }
             validate_stmts(body, &mut fctx, return_type.as_deref(), out);
         }
-        Expr::Binary { left, right, .. } => { validate_expr(left, ctx, out); validate_expr(right, ctx, out); }
-        Expr::Unary { expr, .. } | Expr::Paren(expr) | Expr::Try(expr) => validate_expr(expr, ctx, out),
-        Expr::Index(a,b) => { validate_expr(a, ctx, out); validate_expr(b, ctx, out); }
+        Expr::Binary { left, right, .. } => {
+            validate_expr(left, ctx, out);
+            validate_expr(right, ctx, out);
+        }
+        Expr::Unary { expr, .. } | Expr::Paren(expr) | Expr::Try(expr) => {
+            validate_expr(expr, ctx, out)
+        }
+        Expr::Index(a, b) => {
+            validate_expr(a, ctx, out);
+            validate_expr(b, ctx, out);
+        }
         Expr::Field(a, _) => validate_expr(a, ctx, out),
         Expr::Table(fields) => {
             for f in fields {
                 match f {
-                    TableField::Named(_, e) | TableField::Positional(e) => validate_expr(e, ctx, out),
-                    TableField::Computed(k,v) => { validate_expr(k, ctx, out); validate_expr(v, ctx, out); }
+                    TableField::Named(_, e) | TableField::Positional(e) => {
+                        validate_expr(e, ctx, out)
+                    }
+                    TableField::Computed(k, v) => {
+                        validate_expr(k, ctx, out);
+                        validate_expr(v, ctx, out);
+                    }
                 }
             }
         }
-        Expr::Bundle(items) => { for i in items { validate_expr(i, ctx, out); } }
-        Expr::OrReturn { value, fallback } => { validate_expr(value, ctx, out); validate_expr(fallback, ctx, out); }
+        Expr::Bundle(items) => {
+            for i in items {
+                validate_expr(i, ctx, out);
+            }
+        }
+        Expr::OrReturn { value, fallback } => {
+            validate_expr(value, ctx, out);
+            validate_expr(fallback, ctx, out);
+        }
         Expr::DoBlock { body, give } => {
             let mut bctx = ctx.child();
             validate_stmts(body, &mut bctx, None, out);
             validate_expr(give, ctx, out);
         }
-        Expr::TableComp { iter, when_cond, give, .. } => {
+        Expr::TableComp {
+            iter,
+            when_cond,
+            give,
+            ..
+        } => {
             validate_expr(iter, ctx, out);
-            if let Some(c) = when_cond { validate_expr(c, ctx, out); }
+            if let Some(c) = when_cond {
+                validate_expr(c, ctx, out);
+            }
             validate_expr(give, ctx, out);
         }
         Expr::Is { value, .. } => validate_expr(value, ctx, out),

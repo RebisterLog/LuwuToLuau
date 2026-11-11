@@ -178,7 +178,11 @@ fn render_stmt(stmt: &LStmt, indent: usize, out: &mut String) {
             render_expr_list(exprs, indent, out);
             out.push('\n');
         }
-        LStmt::Function { prefix, params, body } => {
+        LStmt::Function {
+            prefix,
+            params,
+            body,
+        } => {
             pad(indent, out);
             out.push_str(prefix);
             out.push('(');

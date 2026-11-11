@@ -128,11 +128,9 @@ impl FailOn {
                 "syntax" => flags.syntax = true,
                 "contracts" => flags.contracts = true,
                 "types" => flags.types = true,
-                other => {
-                    return Err(format!(
-                        "unknown build.fail_on category `{other}` (expected: syntax, contracts, types)"
-                    ))
-                }
+                other => return Err(format!(
+                    "unknown build.fail_on category `{other}` (expected: syntax, contracts, types)"
+                )),
             }
         }
         if !flags.syntax && !flags.contracts && !flags.types {
@@ -270,7 +268,11 @@ pub fn find_config(start: &Path) -> Option<PathBuf> {
 }
 
 /// Loads the configuration from an explicit path or by searching upwards.
-pub fn load(explicit: Option<&Path>, no_config: bool, start: &Path) -> Result<LoadedConfig, ConfigError> {
+pub fn load(
+    explicit: Option<&Path>,
+    no_config: bool,
+    start: &Path,
+) -> Result<LoadedConfig, ConfigError> {
     if no_config {
         return Ok(LoadedConfig::empty());
     }
@@ -312,10 +314,14 @@ pub fn load(explicit: Option<&Path>, no_config: bool, start: &Path) -> Result<Lo
         });
     }
 
-    config.build.fail_on.flags().map_err(|message| ConfigError {
-        path: Some(path.clone()),
-        message,
-    })?;
+    config
+        .build
+        .fail_on
+        .flags()
+        .map_err(|message| ConfigError {
+            path: Some(path.clone()),
+            message,
+        })?;
 
     Ok(LoadedConfig {
         config,

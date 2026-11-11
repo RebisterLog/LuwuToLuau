@@ -259,11 +259,7 @@ impl Parser {
                 targets.push(self.parse_expr()?);
             }
             let exprs = self.parse_expr_list()?;
-            return Ok(Stmt::Assign {
-                targets,
-                op,
-                exprs,
-            });
+            return Ok(Stmt::Assign { targets, op, exprs });
         }
         Ok(Stmt::Call(first))
     }
@@ -411,7 +407,8 @@ impl Parser {
             }
             return Err(format!(
                 "line {}:{}: expected `{{` or `(` after `.` in pattern",
-                self.cur_token().line, self.cur_token().col
+                self.cur_token().line,
+                self.cur_token().col
             ));
         }
         Ok(Pattern::Name(self.expect_name()?))
@@ -545,7 +542,10 @@ impl Parser {
                     name,
                     params,
                     body: Vec::new(),
-                    visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
+                    visibility: mods
+                        .iter()
+                        .find(|m| *m == "public" || *m == "private")
+                        .cloned(),
                     is_final: false,
                     is_static,
                     is_expect: true,
@@ -558,7 +558,10 @@ impl Parser {
                 name,
                 params,
                 body,
-                visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
+                visibility: mods
+                    .iter()
+                    .find(|m| *m == "public" || *m == "private")
+                    .cloned(),
                 is_final: mods.iter().any(|m| m == "final"),
                 is_static: mods.iter().any(|m| m == "static"),
                 is_expect: false,
@@ -580,7 +583,10 @@ impl Parser {
         Ok(ClassMember::Field(FieldDecl {
             name,
             default,
-            visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
+            visibility: mods
+                .iter()
+                .find(|m| *m == "public" || *m == "private")
+                .cloned(),
             is_const: mods.iter().any(|m| m == "const"),
             is_expect,
             ty,
@@ -626,7 +632,10 @@ impl Parser {
             params.push(Param {
                 name,
                 default,
-                visibility: mods.iter().find(|m| *m == "public" || *m == "private").cloned(),
+                visibility: mods
+                    .iter()
+                    .find(|m| *m == "public" || *m == "private")
+                    .cloned(),
                 is_const: mods.iter().any(|m| *m == "const"),
                 ty,
             });
@@ -949,7 +958,8 @@ impl Parser {
                 } else {
                     Err(format!(
                         "line {}:{}: expected `(` or `{{` after `.`",
-                        self.cur_token().line, self.cur_token().col
+                        self.cur_token().line,
+                        self.cur_token().col
                     ))
                 }
             }
@@ -998,7 +1008,11 @@ impl Parser {
                         };
                         let body = self.parse_block_until(&["end"])?;
                         self.expect_word("end")?;
-                        Ok(Expr::Function { params, body, return_type })
+                        Ok(Expr::Function {
+                            params,
+                            body,
+                            return_type,
+                        })
                     }
                     _ => Ok(Expr::Ident(w)),
                 }
