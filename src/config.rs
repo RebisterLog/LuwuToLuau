@@ -128,9 +128,11 @@ impl FailOn {
                 "syntax" => flags.syntax = true,
                 "contracts" => flags.contracts = true,
                 "types" => flags.types = true,
-                other => return Err(format!(
+                other => {
+                    return Err(format!(
                     "unknown build.fail_on category `{other}` (expected: syntax, contracts, types)"
-                )),
+                ))
+                }
             }
         }
         if !flags.syntax && !flags.contracts && !flags.types {
