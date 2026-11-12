@@ -1,0 +1,43 @@
+const function maybe(flag: boolean): number?
+    if flag then
+        return none
+    end
+    return 7
+end
+
+const a = maybe(true)
+const b = maybe(false)
+print(a or "fallback")
+print(b or "fallback")
+print(a and "yes" or "no")
+print(b and "yes" or "no")
+print(not a, not b)
+print(if a then "truthy" else "falsy")
+
+const function clamp_zero(value: number?): number
+    const v = value or return 0
+    return v
+end
+print(clamp_zero(nil))
+print(clamp_zero(0))
+
+const function guard_false(flag: boolean): string
+    const value = flag or return "false guard"
+    return "kept"
+end
+print(guard_false(false))
+print(guard_false(true))
+
+const function nested(): string
+    const missing = none
+    const check = function()
+        return missing and "x" or "y"
+    end
+    return check()
+end
+print(nested())
+
+const tbl = { value = none }
+print(tbl.value or "empty")
+print(tbl.value == none)
+print(tbl.value and "present" or "absent")

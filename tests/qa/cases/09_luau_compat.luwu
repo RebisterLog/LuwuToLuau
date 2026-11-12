@@ -1,0 +1,34 @@
+print(7 // 2)
+print(7 % 3)
+print(1 << 4)
+print(16 >> 2)
+print(7 & 3)
+print(7 | 8)
+print(7 ~ 3)
+print(~0)
+
+const t = { 1, 2, 3 }
+print(#t)
+
+local M = {}
+function M.add(a, b)
+    return a + b
+end
+function M:sub(a, b)
+    return a - b
+end
+print(M.add(1, 2))
+print(M:sub(5, 2))
+
+local obj = {}
+function obj.method(self, x = 1)
+    return x * 2
+end
+print(obj:method())
+
+local s = [[long
+string]]
+print(s)
+
+local n = .5
+print(n)

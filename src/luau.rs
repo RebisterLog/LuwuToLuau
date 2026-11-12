@@ -84,6 +84,13 @@ pub enum LStmt {
         iter: LExpr,
         body: Vec<LStmt>,
     },
+    NumericFor {
+        var: String,
+        start: LExpr,
+        stop: LExpr,
+        step: Option<LExpr>,
+        body: Vec<LStmt>,
+    },
     Do {
         body: Vec<LStmt>,
     },
@@ -152,16 +159,20 @@ fn render_stmt(stmt: &LStmt, indent: usize, out: &mut String) {
             pad(indent, out);
             out.push_str("const ");
             out.push_str(&names.join(", "));
-            out.push_str(" = ");
-            render_expr_list(exprs, indent, out);
+            if !exprs.is_empty() {
+                out.push_str(" = ");
+                render_expr_list(exprs, indent, out);
+            }
             out.push('\n');
         }
         LStmt::Local { names, exprs } => {
             pad(indent, out);
             out.push_str("local ");
             out.push_str(&names.join(", "));
-            out.push_str(" = ");
-            render_expr_list(exprs, indent, out);
+            if !exprs.is_empty() {
+                out.push_str(" = ");
+                render_expr_list(exprs, indent, out);
+            }
             out.push('\n');
         }
         LStmt::Assign { targets, op, exprs } => {
@@ -248,6 +259,29 @@ fn render_stmt(stmt: &LStmt, indent: usize, out: &mut String) {
             out.push_str(&vars.join(", "));
             out.push_str(" in ");
             render_expr(iter, indent, out);
+            out.push_str(" do\n");
+            render_block(body, indent + 1, out);
+            pad(indent, out);
+            out.push_str("end\n");
+        }
+        LStmt::NumericFor {
+            var,
+            start,
+            stop,
+            step,
+            body,
+        } => {
+            pad(indent, out);
+            out.push_str("for ");
+            out.push_str(var);
+            out.push_str(" = ");
+            render_expr(start, indent, out);
+            out.push_str(", ");
+            render_expr(stop, indent, out);
+            if let Some(step) = step {
+                out.push_str(", ");
+                render_expr(step, indent, out);
+            }
             out.push_str(" do\n");
             render_block(body, indent + 1, out);
             pad(indent, out);

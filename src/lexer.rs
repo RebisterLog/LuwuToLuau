@@ -67,14 +67,27 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
 
         // Line comment. Long comments (--[[ ... ]]) are skipped as a whole.
         if c == '-' && peek(i + 1) == Some('-') {
-            if peek(i + 2) == Some('[') && peek(i + 3) == Some('[') {
-                i += 4;
-                col += 4;
+            let mut j = i + 3;
+            let mut level = 0usize;
+            while peek(j) == Some('=') {
+                level += 1;
+                j += 1;
+            }
+            if peek(i + 2) == Some('[') && peek(j) == Some('[') {
+                // Long comment `--[[ ... ]]` / `--[=[ ... ]=]`.
+                i = j + 1;
                 while i < chars.len() {
-                    if chars[i] == ']' && peek(i + 1) == Some(']') {
-                        i += 2;
-                        col += 2;
-                        break;
+                    if chars[i] == ']' {
+                        let mut k = i + 1;
+                        let mut seen = 0usize;
+                        while k < chars.len() && chars[k] == '=' && seen < level {
+                            seen += 1;
+                            k += 1;
+                        }
+                        if seen == level && k < chars.len() && chars[k] == ']' {
+                            i = k + 1;
+                            break;
+                        }
                     }
                     if chars[i] == '\n' {
                         line += 1;
@@ -95,6 +108,60 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
 
         let start_line = line;
         let start_col = col;
+
+        // Long strings: `[[ ... ]]`, `[=[ ... ]=]`, and so on.
+        if c == '[' {
+            let mut j = i + 1;
+            let mut level = 0usize;
+            while j < chars.len() && chars[j] == '=' {
+                level += 1;
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == '[' {
+                let mut s = String::new();
+                for ch in &chars[i..=j] {
+                    s.push(*ch);
+                }
+                i = j + 1;
+                col += s.chars().count();
+                loop {
+                    if i >= chars.len() {
+                        break;
+                    }
+                    let ch = chars[i];
+                    s.push(ch);
+                    if ch == ']' {
+                        let mut k = i + 1;
+                        let mut seen = 0usize;
+                        while k < chars.len() && chars[k] == '=' && seen < level {
+                            seen += 1;
+                            k += 1;
+                        }
+                        if seen == level && k < chars.len() && chars[k] == ']' {
+                            for ch in &chars[i + 1..=k] {
+                                s.push(*ch);
+                            }
+                            i = k + 1;
+                            col += 2 + level;
+                            break;
+                        }
+                    }
+                    if ch == '\n' {
+                        line += 1;
+                        col = 1;
+                    } else {
+                        col += 1;
+                    }
+                    i += 1;
+                }
+                out.push(Token {
+                    tok: Tok::Str(s),
+                    line: start_line,
+                    col: start_col,
+                });
+                continue;
+            }
+        }
 
         // Strings.
         if c == '"' || c == '\'' {
@@ -188,8 +255,35 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        // Numbers.
-        if c.is_ascii_digit() {
+        // Numbers. A leading `.` is allowed for `.5`, but after an expression
+        // it is field access (`point.1`).
+        let previous_ends_expr = match out.last().map(|t| &t.tok) {
+            Some(Tok::Word(w)) => !matches!(
+                w.as_str(),
+                "return"
+                    | "and"
+                    | "or"
+                    | "not"
+                    | "then"
+                    | "do"
+                    | "give"
+                    | "when"
+                    | "in"
+                    | "else"
+                    | "elseif"
+                    | "local"
+                    | "const"
+                    | "if"
+                    | "while"
+                    | "until"
+            ),
+            Some(Tok::Number(_)) | Some(Tok::Str(_)) | Some(Tok::Backtick(_)) => true,
+            Some(Tok::Sym(s)) if s == ")" || s == "]" || s == "}" => true,
+            _ => false,
+        };
+        let dot_number =
+            c == '.' && peek(i + 1).is_some_and(|d| d.is_ascii_digit()) && !previous_ends_expr;
+        if c.is_ascii_digit() || dot_number {
             // A dot followed by digits after an expression is parsed as `.1`
             // field access by the parser, not as a number here.
             let mut s = String::new();
@@ -235,7 +329,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
         let mut matched = None;
         for sym in [
             "...", "..=", "..", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "^=", "::",
-            "->", "<-", "<+", "//",
+            "->", "<-", "<+", "<<", ">>", "//",
         ] {
             if rest.starts_with(sym) {
                 matched = Some(sym);

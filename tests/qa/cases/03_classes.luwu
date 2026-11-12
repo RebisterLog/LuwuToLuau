@@ -1,0 +1,115 @@
+class Dog(name: string, age: number)
+    function bark(self)
+        print(`{self.name} barked!`)
+    end
+    function birthday(self)
+        self.age += 1
+    end
+end
+
+const oreo = Dog("Oreo", 3)
+oreo:bark()
+oreo:birthday()
+print(oreo.age)
+
+class Settings
+    volume = 0.8
+    fullscreen = false
+    player_name = "Player"
+end
+
+const defaults = Settings()
+const custom = Settings { fullscreen = true, player_name = "Ada" }
+print(defaults.volume, custom.fullscreen, custom.player_name)
+
+class Inventory
+    items: { string } = {}
+end
+const a = Inventory()
+const b = Inventory()
+table.insert(a.items, "sword")
+print(#a.items, #b.items)
+
+class Temperature(celsius: number)
+    function from_fahrenheit(fahrenheit: number): Temperature
+        return Temperature((fahrenheit - 32) * 5 / 9)
+    end
+    function describe(self): string
+        return `{self.celsius}C`
+    end
+end
+print(Temperature.from_fahrenheit(212):describe())
+
+class Username(raw: string)
+    text = string.lower((string.gsub(raw, "%s+", "_")))
+end
+const uname = Username("Ada Lovelace")
+print(uname.text, uname.raw)
+
+class Point
+    x: number
+    y: number
+    function __init(self, text: string)
+        const x, y = string.match(text, "^(%-?%d+),(%-?%d+)$")
+        self.x = tonumber(x) or 0
+        self.y = tonumber(y) or 0
+    end
+end
+const point = Point("3,4")
+print(point.x, point.y)
+
+class Point2
+    x: number = 1
+    y: number = 2
+end
+print(Point2().x, Point2().y, Point2 { x = 7 }.x, Point2 { x = 7 }.y)
+
+class Empty()
+    answer = 42
+end
+print(Empty().answer)
+
+trait Greeting
+    function greet(self): string
+        return "Hello!"
+    end
+end
+class Pirate implements Greeting
+    function greet(self): string
+        return Greeting.greet(self) .. " Arr!"
+    end
+end
+print(Pirate():greet())
+
+trait Named
+    expect const name: string
+end
+trait Speaker needs Named
+    function introduce(self): string
+        return `I'm {self.name}.`
+    end
+end
+class Robot implements Speaker
+    const name = "R2"
+end
+print(Robot():introduce())
+
+trait Stackable(max_stack: number = 64)
+    count = 1
+    function add(self, amount: number): number
+        const room = self.max_stack - self.count
+        const added = math.min(room, amount)
+        self.count += added
+        return amount - added
+    end
+end
+class Arrow implements Stackable end
+class Potion implements Stackable(8) end
+print(Arrow():add(100), Potion():add(100))
+
+class Calculator
+    function static_add(a, b)
+        return a + b
+    end
+end
+print(Calculator.static_add(2, 3))

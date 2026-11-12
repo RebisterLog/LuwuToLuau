@@ -1,0 +1,33 @@
+class Widget
+    const id = 1
+    label: string
+    function __init(self, label)
+        self.label = label
+    end
+end
+const w = Widget("hello")
+print(w.id, w.label)
+
+class PodPoint
+    x = 0
+    y = 0
+    label: string
+end
+print(PodPoint().x, PodPoint().y, PodPoint { x = 5, label = "hi" }.x)
+
+class Token
+    public const value: string
+    public function __init(self, value: string)
+        self.value = value
+    end
+end
+const token = Token("abc")
+print(token.value)
+
+class Counter
+    count = 0
+    function make()
+        return Counter { count = 1 }
+    end
+end
+print(Counter.make().count, Counter().count)

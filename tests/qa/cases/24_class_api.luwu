@@ -1,0 +1,12 @@
+class Point
+    x: number = 1
+    y: number = 2
+end
+const p = Point { x = 10 }
+print(p.x, p.y)
+const fields, complete = class.fields(p)
+print(fields.x, fields.y, complete)
+const q = Point()
+const qf = class.fields(q)
+print(qf.x, qf.y)
+print(class.name(p), class.of(p) == Point, class.isinstance(p, Point))

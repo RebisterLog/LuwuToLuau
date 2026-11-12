@@ -1710,8 +1710,8 @@ const function describe(items: { number }, wanted: number): string
 end
 "#,
         );
-        // `none` is not `nil`, so the guard has to compare with the sentinel.
-        assert!(out.contains("if (found == none) then"));
+        // `none` is not `nil`, so the guard has to use the truthiness helper.
+        assert!(out.contains("not __luwu_truthy(found)"));
         assert!(out.contains("const none = setmetatable"));
     }
 
@@ -1810,5 +1810,160 @@ end
             map_output_path(Path::new("build"), Path::new("Bar.client.luwu")),
             PathBuf::from("build/Bar.client.luau")
         );
+    }
+
+    #[test]
+    fn lowering_supports_numeric_for_and_multiple_assignment() {
+        let out = compile(
+            r#"
+for i = 1, 3 do
+    print(i)
+end
+local a, b = 1, 2
+a, b = b, a
+print(a, b)
+"#,
+        );
+        assert!(out.contains("for i = 1, 3 do"));
+        assert!(out.contains("a, b = b, a"));
+    }
+
+    #[test]
+    fn lowering_supports_bitwise_operators() {
+        let out = compile(
+            r#"
+print(1 << 4, 7 & 3, 7 | 8, 7 ~ 3, ~0)
+"#,
+        );
+        assert!(out.contains("bit32.lshift"));
+        assert!(out.contains("bit32.band"));
+        assert!(out.contains("bit32.bor"));
+        assert!(out.contains("bit32.bxor"));
+        assert!(out.contains("bit32.bnot"));
+    }
+
+    #[test]
+    fn lowering_supports_if_expressions_and_when_chains() {
+        let out = compile(
+            r#"
+const status = if 1 > 2 then "a" elseif 2 > 1 then "b" else "c"
+const function classify(value: number?)
+    if const v = value when v > 10 then
+        return "big"
+    elseif const v = value when v > 0 then
+        return "small"
+    else
+        return "none"
+    end
+end
+for _, n in { 1, 2, 3 } when const doubled = n * 2 when doubled > 2 do
+    print(n)
+end
+"#,
+        );
+        assert!(out.contains("(function()"));
+        assert!(out.contains("doubled"));
+    }
+
+    #[test]
+    fn lowering_supports_try_in_method_calls_and_non_call_expressions() {
+        let out = compile(
+            r#"
+const function run(p: Parser, text: string)
+    const result = try p:parse(text)
+    const plain = try (1 + 2)
+    return result, plain
+end
+"#,
+        );
+        assert!(out.contains("pcall(function()"));
+        assert!(out.contains("parse(text)"));
+    }
+
+    #[test]
+    fn lowering_applies_field_defaults_for_empty_primary_constructors_and_statics() {
+        let out = compile(
+            r#"
+class Empty()
+    answer = 42
+    static version = 3
+end
+"#,
+        );
+        assert!(out.contains("answer = 42"));
+        assert!(out.contains("Empty.version = 3"));
+    }
+
+    #[test]
+    fn lowering_accepts_attributes_casts_exports_and_dotted_functions() {
+        let out = compile(
+            r#"
+export type Pair = {
+    first: number,
+}
+@native
+local function fast(a): number
+    return a
+end
+local M = {}
+function M.add(a, b)
+    return a + b
+end
+const n = fast(1) :: number
+print(M.add(n, 2))
+"#,
+        );
+        assert!(out.contains("function M.add(a, b)"));
+        assert!(out.contains("local function fast(a)"));
+        assert!(!out.contains("@native"));
+        assert!(!out.contains("::"));
+        assert!(!out.contains("export"));
+    }
+
+    #[test]
+    fn lowering_uses_truthiness_helper_for_none() {
+        let out = compile(
+            r#"
+const a = none
+if a then
+    print("x")
+end
+print(not a)
+print(a or "fallback")
+print(a and "yes" or "no")
+"#,
+        );
+        assert!(out.contains("const none = setmetatable"));
+        assert!(out.contains("__luwu_truthy"));
+        assert!(out.contains("not __luwu_truthy(a)"));
+    }
+
+    #[test]
+    fn lowering_supports_long_strings_and_leading_dot_numbers() {
+        let out = compile(
+            r#"
+local text = [==[hello
+world]==]
+print(.5, text)
+"#,
+        );
+        assert!(out.contains("[==[hello"));
+        assert!(out.contains("print(.5, text)"));
+    }
+
+    #[test]
+    fn qa_fixtures_compile() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/qa/cases");
+        let mut count = 0usize;
+        for entry in fs::read_dir(&dir).expect("qa fixture directory") {
+            let path = entry.expect("fixture entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("luwu") {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("read fixture");
+            compile(&source);
+            count += 1;
+        }
+        assert!(count > 0, "no QA fixtures found in {}", dir.display());
     }
 }

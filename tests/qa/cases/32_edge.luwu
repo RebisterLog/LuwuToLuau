@@ -1,0 +1,32 @@
+const function identity<T>(value: T): T
+    return value
+end
+print(identity::<number>(42))
+
+local a, b
+a, b = 1, 2
+print(a, b)
+
+--[==[ long
+comment ]==]
+print(1); print(2);
+
+const x = if a == 1 then (if b == 2 then "both" else "a") else "none"
+print(x)
+
+const function nothing()
+    return
+end
+const value = nothing()
+print(value == nil)
+
+const nested = { for _, n in { 1, 2, 3 } give { n, n * 2 } }
+print(nested[2][1], nested[3][2])
+
+const data = { a = 1, b = 2, ["odd key"] = 3 }
+print(data.a, data["odd key"])
+
+local long = [=[
+multi
+line]=]
+print(#long > 5)

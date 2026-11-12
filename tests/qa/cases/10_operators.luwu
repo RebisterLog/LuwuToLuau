@@ -1,0 +1,27 @@
+print(2 + 3 * 4)
+print((2 + 3) * 4)
+print(2 ^ 3 ^ 2)
+print(-2 ^ 2)
+print(2 ^ -2)
+print(1 .. 2 .. 3)
+print("a" .. "b" .. "c")
+print(not true and false or true)
+print(1 < 2 == true)
+print(#"hello")
+print(-10 // 3)
+
+local a, b = 1, 2
+a, b = b, a
+print(a, b)
+
+local x = 5
+x += 1
+x *= 2
+x -= 3
+x /= 2
+print(x)
+
+const s = `x={1 + 2}, y={(function() return 9 end)()}`
+print(s)
+print("quote \" and newline \n end")
+print('single \' quote')

@@ -1,0 +1,32 @@
+const fruits = { "apple", "kiwi", "pear" }
+print(fruits[1])
+print(fruits[#fruits])
+print(#fruits)
+
+const gold: { [string]: number? } = { Ada = 120, Grace = 75, Alan = 30 }
+local total = 0
+for _, amount in gold do
+    total += amount
+end
+print(total)
+
+const fruits2 = { "apple", "kiwi", "pear" }
+for index, fruit in fruits2 do
+    print(`{index}: {fruit}`)
+end
+
+const player = { name = "Ada", level = 12, position = { x = 4, y = 7 } }
+player.level += 1
+print(`{player.name} is level {player.level}`)
+print(`standing at {player.position.x}, {player.position.y}`)
+
+const queue = { "Ada", "Grace" }
+table.insert(queue, "Alan")
+table.insert(queue, 1, "Linus")
+const first = table.remove(queue, 1)
+print(first)
+print(table.concat(queue, ", "))
+
+const scores = { 72, 95, 88 }
+table.sort(scores)
+print(table.concat(scores, " "))

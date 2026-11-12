@@ -1,0 +1,15 @@
+class Empty()
+    answer = 42
+end
+print(Empty().answer)
+class NoParens
+    answer = 42
+end
+print(NoParens().answer)
+class InitOnly
+    answer = 7
+    function __init(self)
+        self.extra = 1
+    end
+end
+print(InitOnly().answer, InitOnly().extra)

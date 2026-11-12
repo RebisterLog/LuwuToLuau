@@ -1,0 +1,18 @@
+local M = {}
+function M.add(a, b)
+    return a + b
+end
+function M:sub(a, b)
+    return a - b
+end
+print(M.add(1, 2))
+print(M:sub(5, 2))
+
+local obj = { name = "x" }
+function obj.greet(self, suffix = "!")
+    return self.name .. suffix
+end
+function obj:shout()
+    return self:greet("!!"):upper()
+end
+print(obj:shout())

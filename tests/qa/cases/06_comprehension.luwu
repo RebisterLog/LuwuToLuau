@@ -1,0 +1,23 @@
+const numbers = { 1, 2, 3, 4, 5, 6 }
+const doubled = { for _, n in numbers give n * 2 }
+print(table.concat(doubled, ","))
+
+const evens = { for _, n in numbers when n % 2 == 0 give n }
+print(table.concat(evens, ","))
+
+const map = { a = 1, b = 2, c = 3 }
+const keys = { for k, v in map give k }
+table.sort(keys)
+print(table.concat(keys, ","))
+
+const records = { { name = "Ada", age = 36 }, { name = "Alan", age = 41 } }
+const names = { for _, r in records give r.name }
+print(table.concat(names, ","))
+
+const nested = { for _, n in numbers give { for _, m in { 1, 2 } give n * m } }
+print(#nested, nested[1][2], nested[6][1])
+
+const function make()
+    return { for _, n in numbers when n > 3 give n }
+end
+print(table.concat(make(), ","))

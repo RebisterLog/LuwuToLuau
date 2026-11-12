@@ -1,0 +1,12 @@
+const function check(v: number?): string
+    if const x = v when x > 10 then
+        return "big"
+    elseif const x = v when x > 0 then
+        return "small"
+    else
+        return "none"
+    end
+end
+print(check(50))
+print(check(5))
+print(check(nil))

@@ -1,0 +1,109 @@
+const prices: { [string]: number? } = { apple = 1.25 }
+
+const function price_of(fruit: string): string
+    const price = prices[fruit] or return `{fruit} isn't sold here`
+    return `{fruit} costs {price}`
+end
+print(price_of("apple"))
+print(price_of("kiwi"))
+
+const function describe(value: number?): string
+    if const v = value then
+        return `value {v}`
+    else
+        return "no value"
+    end
+end
+print(describe(5))
+print(describe(nil))
+
+const function classify(value: number?): string
+    if const v = value when v > 10 then
+        return "big"
+    elseif const v = value when v > 0 then
+        return "small"
+    else
+        return "none"
+    end
+end
+print(classify(50))
+print(classify(5))
+print(classify(nil))
+
+const total = do
+    local sum = 0
+    for i = 1, 4 do
+        sum += i
+    end
+    give sum
+end
+print(total)
+
+const function first_even(numbers: { number }): number?
+    for _, n in numbers when n % 2 == 0 do
+        return n
+    end
+    return none
+end
+const found = first_even({ 1, 2, 3, 4 })
+print(found)
+
+const function first_long(numbers: { number }): number?
+    for _, n in numbers when const doubled = n * 2 when doubled > 5 do
+        return n
+    end
+    return none
+end
+print(first_long({ 1, 2, 3, 4 }))
+
+const function loop_guard(numbers: { number }): string
+    for _, n in numbers do
+        const v = n or break
+        print(v)
+    end
+    return "done"
+end
+print(loop_guard({ 1, 2, 3 }))
+
+const players = {
+    { name = "Ada", online = false },
+    { name = "Grace", online = true },
+}
+const host = do
+    for _, player in players when player.online do
+        give player.name
+    end
+    give "nobody"
+end
+print(host)
+
+const inventory = {
+    { name = "Arrow", count = 24 },
+    { name = "Potion", count = 0 },
+}
+for _, item in inventory when item.count > 0 do
+    print(`{item.name} x{item.count}`)
+end
+
+for n = 1, 20 when n % 3 == 0 and n % 2 == 1 do
+    print(n)
+end
+
+const jobs = { "build", "test", "deploy" }
+while const job = table.remove(jobs, 1) do
+    print(`Running {job}`)
+end
+
+const entries = { "hp=10", "broken", "mp=4", "stop", "xp=99" }
+for _, entry in entries do
+    entry == "stop" and break
+    const key, value = string.match(entry, "^(%a+)=(%d+)$")
+    key and value or continue
+    print(key, value)
+end
+
+const nicknames: { [string]: string? } = { grace = "Amazing Grace" }
+const function display_name(id: string): string
+    return if const nickname = nicknames[id] then nickname else id
+end
+print(display_name("grace"), display_name("ada"))

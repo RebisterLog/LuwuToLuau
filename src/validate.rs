@@ -699,14 +699,18 @@ fn validate_stmt(
         }
         Stmt::IfBind {
             expr,
-            when_cond,
+            when_clauses,
             then_body,
             else_body,
             ..
         } => {
             validate_expr(expr, ctx, out);
-            if let Some(c) = when_cond {
-                validate_expr(c, ctx, out);
+            for clause in when_clauses {
+                match clause {
+                    WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => {
+                        validate_expr(e, ctx, out)
+                    }
+                }
             }
             let mut bctx = ctx.child();
             validate_stmts(then_body, &mut bctx, current_ret, out);
@@ -717,13 +721,53 @@ fn validate_stmt(
         }
         Stmt::For {
             iter,
-            when_clause,
+            when_clauses,
             body,
             ..
         } => {
             validate_expr(iter, ctx, out);
-            if let Some(w) = when_clause {
-                match w {
+            for clause in when_clauses {
+                match clause {
+                    WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => {
+                        validate_expr(e, ctx, out)
+                    }
+                }
+            }
+            let mut bctx = ctx.child();
+            validate_stmts(body, &mut bctx, current_ret, out);
+        }
+        Stmt::NumericFor {
+            start,
+            stop,
+            step,
+            when_clauses,
+            body,
+            ..
+        } => {
+            validate_expr(start, ctx, out);
+            validate_expr(stop, ctx, out);
+            if let Some(step) = step {
+                validate_expr(step, ctx, out);
+            }
+            for clause in when_clauses {
+                match clause {
+                    WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => {
+                        validate_expr(e, ctx, out)
+                    }
+                }
+            }
+            let mut bctx = ctx.child();
+            validate_stmts(body, &mut bctx, current_ret, out);
+        }
+        Stmt::WhileBind {
+            expr,
+            when_clauses,
+            body,
+            ..
+        } => {
+            validate_expr(expr, ctx, out);
+            for clause in when_clauses {
+                match clause {
                     WhenClause::Cond(e) | WhenClause::Bind { expr: e, .. } => {
                         validate_expr(e, ctx, out)
                     }
@@ -890,7 +934,9 @@ fn validate_expr(expr: &Expr, ctx: &TypeCtx, out: &mut Vec<Diagnostic>) {
         }
         Expr::OrReturn { value, fallback } => {
             validate_expr(value, ctx, out);
-            validate_expr(fallback, ctx, out);
+            if let Some(fallback) = fallback {
+                validate_expr(fallback, ctx, out);
+            }
         }
         Expr::DoBlock { body, give } => {
             let mut bctx = ctx.child();

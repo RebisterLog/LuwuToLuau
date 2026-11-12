@@ -1,0 +1,6 @@
+local a, b = 1, 2
+a, b = b, a
+print(a, b)
+local x, y, z = 1, 2, 3
+x, y = y, x
+print(x, y, z)

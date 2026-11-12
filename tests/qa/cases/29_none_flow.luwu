@@ -1,0 +1,24 @@
+const function nested_none(): string
+    const missing = nil
+    const value = (if missing then missing else none)
+    const predicate = function()
+        if value then
+            return "truthy"
+        end
+        return "falsy"
+    end
+    return predicate()
+end
+print(nested_none())
+
+const function returns_none_later()
+    local value = nil
+    value = none
+    return value
+end
+const v = returns_none_later()
+if v then
+    print("BUG truthy")
+else
+    print("falsy")
+end

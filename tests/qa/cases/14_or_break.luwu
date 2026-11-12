@@ -1,0 +1,17 @@
+const function scan(items: { number }): string
+    for _, n in items do
+        const value = n or continue
+        print(value)
+    end
+    return "done"
+end
+print(scan({ 1, 0, 3 }))
+
+const function first(items: { number }): string
+    for _, n in items do
+        const value = (if n > 2 then n else nil) or break
+        print(value)
+    end
+    return "done"
+end
+print(first({ 1, 5, 9 }))

@@ -1,0 +1,6 @@
+export type Vec = { x: number, y: number }
+export const ORIGIN: Vec = { x = 0, y = 0 }
+export function make(x: number, y: number): Vec
+    return { x = x, y = y }
+end
+print(ORIGIN.x, make(1, 2).y)

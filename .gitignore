@@ -4,6 +4,8 @@
 # Generated output
 /build
 /dist
+/tests/qa/.out
+/tests/qa/.build
 
 # Generated Luau artifacts
 *.luau

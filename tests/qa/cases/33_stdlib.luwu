@@ -1,0 +1,25 @@
+const name = "nyla"
+print(name:upper())
+print(("meow"):rep(3))
+print(string.format("%s=%d", "x", 42))
+print(string.find("hello", "ell") ~= nil)
+
+const list = { 1, 2, 3, 2, 4 }
+print(table.find(list, 2))
+table.drop(list, 2)
+print(table.concat(list, ","))
+print(table.find(list, 9) == nil)
+
+const copy = table.clone(list)
+table.insert(copy, 9)
+print(#list, #copy)
+
+const players = {
+    { name = "Ada", score = 72 },
+    { name = "Grace", score = 95 },
+    { name = "Alan", score = 88 },
+}
+table.sort(players, function(a, b)
+    return a.score > b.score
+end)
+print(players[1].name, players[3].name)

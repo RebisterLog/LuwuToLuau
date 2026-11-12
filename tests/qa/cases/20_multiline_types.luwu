@@ -1,0 +1,8 @@
+type Pair = {
+    first: number,
+    second: number,
+}
+type Callback = (number, string) ->
+    boolean
+const p: Pair = { first = 1, second = 2 }
+print(p.first)

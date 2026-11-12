@@ -1,0 +1,52 @@
+type Player = { name: string, score: number }
+type Callback = (number, string) ->
+    boolean
+
+const players: { Player } = {
+    { name = "Ada", score = 72 },
+    { name = "Grace", score = 95 },
+}
+table.sort(players, function(a: Player, b: Player): boolean
+    return a.score > b.score
+end)
+print(players[1].name)
+
+const function min_max(numbers: { number }): (number, number)
+    local low, high = math.huge, -math.huge
+    for _, n in numbers do
+        low = math.min(low, n)
+        high = math.max(high, n)
+    end
+    return low, high
+end
+const low, high = min_max({ 72, 95, 88 })
+print(low, high)
+
+const function pair(): (string, string)
+    return "a", "b"
+end
+const last = { pair() }
+const not_last = { pair(), "c" }
+print(table.concat(last, " "))
+print(table.concat(not_last, " "))
+
+const function sum(...: number): number
+    local total = 0
+    for _, n in { ... } do
+        total += n
+    end
+    return total
+end
+print(sum(1, 2, 3, 4))
+
+const function make_counter(): () -> number
+    local count = 0
+    return function()
+        count += 1
+        return count
+    end
+end
+const next_ticket = make_counter()
+next_ticket()
+next_ticket()
+print(next_ticket())

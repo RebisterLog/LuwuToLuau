@@ -1,0 +1,51 @@
+print("testing none")
+print((not none) == true)
+if none then
+    print("BUG: none should be falsy")
+else
+    print("none is falsy")
+end
+print(none == none)
+print(nil ~= none)
+print(none ~= false)
+print(none ~= 0)
+print(tostring(none))
+
+const t = {1, none, 3}
+print(#t, t[2] == none)
+t[2] = none
+print(t[2] == none)
+
+const k = {}
+k[none] = "value"
+print(k[none])
+k[none] = nil
+print(k[none])
+
+const function find(items: { number }, wanted: number): number?
+    for _, item in items do
+        if item == wanted then
+            return item
+        end
+    end
+    return none
+end
+
+const function check(items: { number }, wanted: number): string
+    const found = find(items, wanted) or return "missing"
+    if found then
+        return `found {found}`
+    end
+    return "falsy"
+end
+
+print(check({ 1, 2, 3 }, 2))
+print(check({ 1, 2, 3 }, 9))
+
+const maybe = find({ 1, 2, 3 }, 5)
+if maybe then
+    print("BUG: maybe should be falsy")
+else
+    print("maybe is falsy")
+end
+print(not maybe)

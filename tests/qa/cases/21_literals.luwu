@@ -1,0 +1,8 @@
+print(0xff)
+print(0b1010)
+print(1e3)
+print(.5)
+local s = [==[hello
+world]==]
+print(s)
+print([[simple]])

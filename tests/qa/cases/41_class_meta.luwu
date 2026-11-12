@@ -1,0 +1,21 @@
+class User
+    public name: string
+    private secret: string
+    public function __init(self, name, secret)
+        self.name = name
+        self.secret = secret
+    end
+    public function hello(self)
+        return self.name
+    end
+    private function hidden(self)
+        return self.secret
+    end
+end
+const u = User("Ada", "x")
+const fields, complete = class.fields(u)
+print(fields.name, fields.secret, complete)
+const m = class.member(u, "hello")
+print(m.name, m.kind, m.visibility)
+print(m:get(u))
+print(class.member(u, "missing") == nil)

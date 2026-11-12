@@ -1,0 +1,101 @@
+class BankAccount(
+    public const owner: string,
+    private balance: number = 0
+)
+    public function deposit(self, amount: number)
+        if amount > 0 then
+            self.balance += amount
+        end
+    end
+    public function get_balance(self): number
+        return self.balance
+    end
+end
+
+const account = BankAccount("Ada")
+account:deposit(50)
+account:deposit(-10)
+print(account.owner, account:get_balance())
+
+class Money private (
+    private const units: number,
+    private const cents: number,
+    public const currency: string
+)
+    public function usd(units: number, cents: number): Money
+        return Money.of(units, cents, "USD")
+    end
+    private function of(units: number, cents: number, currency: string): Money
+        return Money(units, cents, currency)
+    end
+    public function __add(self, other: Money): Money
+        const cents = self.cents + other.cents
+        const units = self.units + other.units + cents // 100
+        return Money(units, cents % 100, self.currency)
+    end
+    public function __eq(self, other: Money): boolean
+        return self.units == other.units
+            and self.cents == other.cents
+            and self.currency == other.currency
+    end
+    public function __tostring(self): string
+        return string.format("%d.%02d %s", self.units, self.cents, self.currency)
+    end
+end
+
+const total = Money.usd(19, 99) + Money.usd(5, 1)
+print(`{total}`)
+print(total == Money.usd(25, 0))
+
+class Health private (
+    private current: number,
+    public const max_health: number
+)
+    public function full(max_health: number): Health
+        return Health(max_health, max_health)
+    end
+    private function clamped(current: number, max_health: number): Health
+        return Health(math.clamp(current, 0, max_health), max_health)
+    end
+    public function __add(self, amount: number): Health
+        return Health.clamped(self.current + amount, self.max_health)
+    end
+    public function __sub(self, amount: number): Health
+        return Health.clamped(self.current - amount, self.max_health)
+    end
+    public function __eq(self, other: Health): boolean
+        return self.current == other.current
+    end
+    public function __tostring(self): string
+        return `{self.current}/{self.max_health}`
+    end
+end
+
+local hp = Health.full(100)
+print(hp)
+hp -= 65
+print(hp)
+hp += 500
+print(hp)
+
+class Circle(radius: number) end
+class Square(side: number) end
+const function area(shape)
+    if class.isinstance(shape, Circle) then
+        return math.pi * shape.radius ^ 2
+    end
+    return shape.side ^ 2
+end
+print(math.floor(area(Circle(1)) * 100) / 100, area(Square(3)))
+print(class.name(Square(3)))
+
+class Set
+    function __iter(self)
+        return next, { 1, 2, 3, 4 }
+    end
+end
+local seen = 0
+for k, v in Set {} do
+    seen += v
+end
+print(seen)

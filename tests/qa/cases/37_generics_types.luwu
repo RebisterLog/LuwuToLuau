@@ -1,0 +1,35 @@
+type Registry = { [string]: { [number]: { string } } }
+type Nested<T> = { value: T, next: T? }
+
+class Box<T>(value: T)
+    function get(self): T
+        return self.value
+    end
+end
+
+const b = Box(5)
+print(b:get())
+
+trait HasItems
+    items = { 1, 2 }
+    function total(self): number
+        local sum = 0
+        for _, v in self.items do
+            sum += v
+        end
+        return sum
+    end
+end
+
+class OnlyTrait implements HasItems end
+print(OnlyTrait():total())
+print(OnlyTrait { items = { 3, 4, 5 } }:total())
+
+const function takes(reg: Registry, nested: Nested<number>): number
+    return nested.value
+end
+print(takes({}, { value = 4 }))
+
+type Deep = Map<string, List<Map<number, string>>>
+local deep: Deep? = nil
+print(deep == nil)

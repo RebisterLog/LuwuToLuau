@@ -1,0 +1,5 @@
+const n = 5
+const s = n :: any
+print(s)
+const t = ({ 1, 2, 3 } :: { number })
+print(#t)

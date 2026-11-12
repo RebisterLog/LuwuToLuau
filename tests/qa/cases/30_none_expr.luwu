@@ -1,0 +1,11 @@
+const function maybe(): number?
+    return none
+end
+const a = maybe()
+const b = if a then 1 else 2
+print(b)
+const c = a and a or 2
+print(c)
+print(not a)
+print(a or 3)
+print(if a then "yes" else "no")

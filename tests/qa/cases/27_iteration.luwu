@@ -1,0 +1,18 @@
+const registry: { [string]: number } = {}
+registry["a"] = 1
+registry["b"] = 2
+for k, v in registry do
+    print(k, v)
+end
+
+const list = { 10, 20, 30 }
+for i, v in list do
+    print(i, v)
+end
+
+const mixed = { 1, 2, name = "x" }
+local count = 0
+for k in mixed do
+    count += 1
+end
+print(count)

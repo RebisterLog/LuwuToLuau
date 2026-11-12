@@ -130,10 +130,23 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> PResult<Stmt> {
-        if self.at_word("class") {
+        while self.eat_sym("@") {
+            // Attributes are compile-time hints (for example `@native`); they
+            // carry no runtime meaning for the generated Luau.
+            let _ = self.expect_name()?;
+            if self.at_sym("(") {
+                self.skip_balanced("(", ")");
+            }
+        }
+        if self.eat_word("export") {
+            // `export` marks module bindings; the Luau output keeps the binding
+            // itself and lets the module system decide visibility.
+            return self.parse_stmt();
+        }
+        if self.at_word("class") && matches!(self.peek(1), Tok::Word(_)) {
             return Ok(Stmt::Class(self.parse_class()?));
         }
-        if self.at_word("trait") {
+        if self.at_word("trait") && matches!(self.peek(1), Tok::Word(_)) {
             return Ok(Stmt::Trait(self.parse_trait()?));
         }
         if self.at_word("const") || self.at_word("local") {
@@ -145,6 +158,9 @@ impl Parser {
             };
             if self.eat_word("function") {
                 let name = self.expect_name()?;
+                if self.at_sym("<") {
+                    self.skip_balanced("<", ">");
+                }
                 let params = self.parse_params()?;
                 let return_type = if self.eat_sym(":") {
                     self.skip_type()
@@ -168,7 +184,14 @@ impl Parser {
             } else {
                 None
             };
-            self.expect_sym("=")?;
+            if !self.eat_sym("=") {
+                return Ok(Stmt::Decl {
+                    kind,
+                    patterns,
+                    exprs: Vec::new(),
+                    ty,
+                });
+            }
             let exprs = self.parse_expr_list()?;
             return Ok(Stmt::Decl {
                 kind,
@@ -179,7 +202,25 @@ impl Parser {
         }
         if self.at_word("function") {
             self.advance();
-            let name = self.expect_name()?;
+            let mut name = self.expect_name()?;
+            // Luau-style table/method declarations: `function M.foo()` and
+            // `function M:foo()`.
+            let mut target = None;
+            while self.at_sym(".") || self.at_sym(":") {
+                let sep = if self.eat_sym(":") {
+                    ":"
+                } else {
+                    self.expect_sym(".")?;
+                    "."
+                };
+                let part = self.expect_name()?;
+                name.push_str(sep);
+                name.push_str(&part);
+                target = Some(());
+            }
+            if self.at_sym("<") {
+                self.skip_balanced("<", ">");
+            }
             let params = self.parse_params()?;
             let return_type = if self.eat_sym(":") {
                 self.skip_type()
@@ -189,7 +230,11 @@ impl Parser {
             let body = self.parse_block_until(&["end"])?;
             self.expect_word("end")?;
             return Ok(Stmt::Function {
-                kind: BindingKind::Local,
+                kind: if target.is_some() {
+                    BindingKind::Global
+                } else {
+                    BindingKind::Local
+                },
                 name,
                 params,
                 body,
@@ -204,6 +249,22 @@ impl Parser {
         }
         if self.at_word("while") {
             self.advance();
+            if self.at_word("const") || self.at_word("local") {
+                self.advance();
+                let name = self.expect_name()?;
+                self.expect_sym("=")?;
+                let expr = self.parse_expr()?;
+                let when_clauses = self.parse_when_clauses()?;
+                self.expect_word("do")?;
+                let body = self.parse_block_until(&["end"])?;
+                self.expect_word("end")?;
+                return Ok(Stmt::WhileBind {
+                    name,
+                    expr,
+                    when_clauses,
+                    body,
+                });
+            }
             let cond = self.parse_expr()?;
             self.expect_word("do")?;
             let body = self.parse_block_until(&["end"])?;
@@ -242,25 +303,38 @@ impl Parser {
             let value = self.parse_expr()?;
             return Ok(Stmt::Give(value));
         }
-        if self.at_word("type") {
-            // Type aliases carry no runtime meaning; consume the rest of the line.
-            let line = self.cur_token().line;
-            while !matches!(self.cur(), Tok::Eof) && self.cur_token().line == line {
-                self.advance();
+        if self.at_word("type") && matches!(self.peek(1), Tok::Word(_)) {
+            // Type aliases carry no runtime meaning; consume the whole alias,
+            // including multi-line table/function types.
+            self.expect_word("type")?;
+            let _ = self.expect_name()?;
+            if self.at_sym("<") {
+                self.skip_balanced("<", ">");
+            }
+            if self.eat_sym("=") {
+                let _ = self.skip_type_decl();
             }
             return Ok(Stmt::Do { body: Vec::new() });
         }
 
         // Expression statement or assignment.
         let first = self.parse_expr()?;
+        let mut targets = vec![first];
+        while self.eat_sym(",") {
+            targets.push(self.parse_expr()?);
+        }
         if let Some(op) = self.parse_assign_op() {
-            let mut targets = vec![first];
-            while self.eat_sym(",") {
-                targets.push(self.parse_expr()?);
-            }
             let exprs = self.parse_expr_list()?;
             return Ok(Stmt::Assign { targets, op, exprs });
         }
+        if targets.len() > 1 {
+            return Err(format!(
+                "line {}:{}: expected an assignment after a list of expressions",
+                self.cur_token().line,
+                self.cur_token().col
+            ));
+        }
+        let first = targets.remove(0);
         Ok(Stmt::Call(first))
     }
 
@@ -279,6 +353,7 @@ impl Parser {
     fn at_statement_end(&self) -> bool {
         match self.cur() {
             Tok::Eof => true,
+            Tok::Sym(s) if s == ";" => true,
             Tok::Word(w) => matches!(
                 w.as_str(),
                 "end"
@@ -298,28 +373,27 @@ impl Parser {
 
     fn parse_if(&mut self) -> PResult<Stmt> {
         self.expect_word("if")?;
+        let stmt = self.parse_if_branch_after_keyword()?;
+        self.expect_word("end")?;
+        Ok(stmt)
+    }
+
+    /// Parses one `if`/`elseif` branch after the keyword has been consumed.
+    /// Consumes the closing `end` for the whole chain.
+    fn parse_if_branch_after_keyword(&mut self) -> PResult<Stmt> {
         if self.at_word("const") || self.at_word("local") {
             self.advance();
             let name = self.expect_name()?;
             self.expect_sym("=")?;
             let expr = self.parse_expr()?;
-            let when_cond = if self.eat_word("when") {
-                Some(self.parse_expr()?)
-            } else {
-                None
-            };
+            let when_clauses = self.parse_when_clauses()?;
             self.expect_word("then")?;
             let then_body = self.parse_block_until(&["elseif", "else", "end"])?;
-            let else_body = if self.eat_word("else") {
-                Some(self.parse_block_until(&["end"])?)
-            } else {
-                None
-            };
-            self.expect_word("end")?;
+            let else_body = self.parse_if_else_tail()?;
             return Ok(Stmt::IfBind {
                 name,
                 expr,
-                when_cond,
+                when_clauses,
                 then_body,
                 else_body,
             });
@@ -328,52 +402,80 @@ impl Parser {
         let cond = self.parse_expr()?;
         self.expect_word("then")?;
         let body = self.parse_block_until(&["elseif", "else", "end"])?;
-        let mut branches = vec![(cond, body)];
-        while self.eat_word("elseif") {
-            let c = self.parse_expr()?;
-            self.expect_word("then")?;
-            let b = self.parse_block_until(&["elseif", "else", "end"])?;
-            branches.push((c, b));
-        }
-        let else_body = if self.eat_word("else") {
-            Some(self.parse_block_until(&["end"])?)
-        } else {
-            None
-        };
-        self.expect_word("end")?;
+        let else_body = self.parse_if_else_tail()?;
         Ok(Stmt::If {
-            branches,
+            branches: vec![(cond, body)],
             else_body,
         })
     }
 
+    fn parse_if_else_tail(&mut self) -> PResult<Option<Vec<Stmt>>> {
+        if self.eat_word("elseif") {
+            let nested = self.parse_if_branch_after_keyword()?;
+            return Ok(Some(vec![nested]));
+        }
+        if self.eat_word("else") {
+            return Ok(Some(self.parse_block_until(&["end"])?));
+        }
+        Ok(None)
+    }
+
     fn parse_for(&mut self) -> PResult<Stmt> {
         self.expect_word("for")?;
+        // Numeric loop: `for i = start, stop [, step] do`.
+        if matches!(self.cur(), Tok::Word(_)) && self.peek(1).is_sym("=") {
+            let name = self.expect_name()?;
+            self.expect_sym("=")?;
+            let start = self.parse_expr()?;
+            self.expect_sym(",")?;
+            let stop = self.parse_expr()?;
+            let step = if self.eat_sym(",") {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            let when_clauses = self.parse_when_clauses()?;
+            self.expect_word("do")?;
+            let body = self.parse_block_until(&["end"])?;
+            self.expect_word("end")?;
+            return Ok(Stmt::NumericFor {
+                name,
+                start,
+                stop,
+                step,
+                when_clauses,
+                body,
+            });
+        }
         let patterns = self.parse_pattern_list_until(&["in"])?;
         self.expect_word("in")?;
         let iter = self.parse_expr()?;
-        let when_clause = if self.eat_word("when") {
-            if self.at_word("const") || self.at_word("local") {
-                self.advance();
-                let name = self.expect_name()?;
-                self.expect_sym("=")?;
-                let expr = self.parse_expr()?;
-                Some(WhenClause::Bind { name, expr })
-            } else {
-                Some(WhenClause::Cond(self.parse_expr()?))
-            }
-        } else {
-            None
-        };
+        let when_clauses = self.parse_when_clauses()?;
         self.expect_word("do")?;
         let body = self.parse_block_until(&["end"])?;
         self.expect_word("end")?;
         Ok(Stmt::For {
             patterns,
             iter,
-            when_clause,
+            when_clauses,
             body,
         })
+    }
+
+    fn parse_when_clauses(&mut self) -> PResult<Vec<WhenClause>> {
+        let mut clauses = Vec::new();
+        while self.eat_word("when") {
+            if self.at_word("const") || self.at_word("local") {
+                self.advance();
+                let name = self.expect_name()?;
+                self.expect_sym("=")?;
+                let expr = self.parse_expr()?;
+                clauses.push(WhenClause::Bind { name, expr });
+            } else {
+                clauses.push(WhenClause::Cond(self.parse_expr()?));
+            }
+        }
+        Ok(clauses)
     }
 
     fn parse_pattern_list_until(&mut self, terms: &[&str]) -> PResult<Vec<Pattern>> {
@@ -435,11 +537,28 @@ impl Parser {
         if self.at_sym("<") {
             self.skip_balanced("<", ">");
         }
-        let (params, has_ctor_parens) = if self.at_sym("(") {
+        let class_visibility = if self.at_word("public") || self.at_word("private") {
+            let v = match self.cur() {
+                Tok::Word(w) => Some(w.clone()),
+                _ => None,
+            };
+            self.advance();
+            v
+        } else {
+            None
+        };
+        let (mut params, has_ctor_parens) = if self.at_sym("(") {
             (self.parse_params()?, true)
         } else {
             (Vec::new(), false)
         };
+        if let Some(visibility) = class_visibility {
+            for p in &mut params {
+                if p.visibility.is_none() {
+                    p.visibility = Some(visibility.clone());
+                }
+            }
+        }
         let mut implements = Vec::new();
         if self.eat_word("implements") {
             loop {
@@ -512,6 +631,12 @@ impl Parser {
     }
 
     fn parse_class_member(&mut self) -> PResult<ClassMember> {
+        while self.eat_sym("@") {
+            let _ = self.expect_name()?;
+            if self.at_sym("(") {
+                self.skip_balanced("(", ")");
+            }
+        }
         let mut mods: Vec<String> = Vec::new();
         loop {
             if let Tok::Word(w) = self.cur() {
@@ -524,11 +649,21 @@ impl Parser {
                     continue;
                 }
             }
+            if self.eat_sym("@") {
+                let _ = self.expect_name()?;
+                if self.at_sym("(") {
+                    self.skip_balanced("(", ")");
+                }
+                continue;
+            }
             break;
         }
         let is_expect = mods.iter().any(|m| m == "expect");
         if self.eat_word("function") {
             let name = self.expect_name()?;
+            if self.at_sym("<") {
+                self.skip_balanced("<", ">");
+            }
             let params = self.parse_params()?;
             let return_type = if self.eat_sym(":") {
                 self.skip_type()
@@ -589,6 +724,7 @@ impl Parser {
                 .cloned(),
             is_const: mods.iter().any(|m| m == "const"),
             is_expect,
+            is_static: mods.iter().any(|m| m == "static"),
             ty,
         }))
     }
@@ -697,12 +833,106 @@ impl Parser {
                     depth += 1;
                     self.advance();
                 }
+                Tok::Sym(s) if s == "<<" => {
+                    parts.push(s);
+                    depth += 2;
+                    self.advance();
+                }
                 Tok::Sym(s) if s == ")" || s == "}" || s == "]" || s == ">" => {
                     if depth == 0 {
                         break;
                     }
                     parts.push(s);
                     depth -= 1;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == ">>" => {
+                    if depth == 0 {
+                        break;
+                    }
+                    parts.push(s);
+                    depth -= 2;
+                    self.advance();
+                }
+                tok => {
+                    parts.push(tok.to_string());
+                    self.advance();
+                }
+            }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(""))
+        }
+    }
+
+    fn skip_type_decl(&mut self) -> Option<String> {
+        let start_line = self.cur_token().line;
+        let mut depth: i32 = 0;
+        let mut parts: Vec<String> = Vec::new();
+        while !matches!(self.cur(), Tok::Eof) {
+            if depth == 0 && self.cur_token().line > start_line {
+                let starts_statement = match self.cur() {
+                    Tok::Word(w) => matches!(
+                        w.as_str(),
+                        "class"
+                            | "trait"
+                            | "const"
+                            | "local"
+                            | "function"
+                            | "type"
+                            | "export"
+                            | "if"
+                            | "for"
+                            | "while"
+                            | "repeat"
+                            | "do"
+                            | "return"
+                            | "break"
+                            | "continue"
+                            | "give"
+                            | "end"
+                            | "else"
+                            | "elseif"
+                            | "until"
+                            | "when"
+                            | "then"
+                            | "implements"
+                            | "needs"
+                    ),
+                    Tok::Sym(s) if s == "@" => true,
+                    _ => false,
+                };
+                if starts_statement {
+                    break;
+                }
+            }
+            match self.cur().clone() {
+                Tok::Sym(s) if s == "(" || s == "{" || s == "[" || s == "<" => {
+                    parts.push(s);
+                    depth += 1;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == "<<" => {
+                    parts.push(s);
+                    depth += 2;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == ")" || s == "}" || s == "]" || s == ">" => {
+                    if depth == 0 {
+                        break;
+                    }
+                    parts.push(s);
+                    depth -= 1;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == ">>" => {
+                    if depth == 0 {
+                        break;
+                    }
+                    parts.push(s);
+                    depth -= 2;
                     self.advance();
                 }
                 tok => {
@@ -722,9 +952,15 @@ impl Parser {
         if !self.eat_sym(open) {
             return;
         }
-        let mut depth = 1;
+        let mut depth = 1i32;
         while depth > 0 && !matches!(self.cur(), Tok::Eof) {
-            if self.eat_sym(open) {
+            if close == ">" && self.at_sym(">>") {
+                self.advance();
+                depth -= 2;
+            } else if open == "<" && self.at_sym("<<") {
+                self.advance();
+                depth += 2;
+            } else if self.eat_sym(open) {
                 depth += 1;
             } else if self.eat_sym(close) {
                 depth -= 1;
@@ -792,10 +1028,48 @@ impl Parser {
 
             if op == "or" && self.at_word("return") {
                 self.advance();
-                let fallback = self.parse_expr_prec(0)?;
+                let fallback = if self.at_statement_end()
+                    || self.at_sym(")")
+                    || self.at_sym("}")
+                    || self.at_sym("]")
+                    || self.at_sym(",")
+                {
+                    None
+                } else {
+                    Some(Box::new(self.parse_expr_prec(0)?))
+                };
                 left = Expr::OrReturn {
                     value: Box::new(left),
-                    fallback: Box::new(fallback),
+                    fallback,
+                };
+                continue;
+            }
+
+            if op == "or" && (self.at_word("break") || self.at_word("continue")) {
+                let action = if self.eat_word("break") {
+                    FlowAction::Break
+                } else {
+                    self.expect_word("continue")?;
+                    FlowAction::Continue
+                };
+                left = Expr::OrFlow {
+                    value: Box::new(left),
+                    action,
+                };
+                continue;
+            }
+
+            if (op == "and" || op == "or") && (self.at_word("break") || self.at_word("continue")) {
+                let action = if self.eat_word("break") {
+                    FlowAction::Break
+                } else {
+                    self.expect_word("continue")?;
+                    FlowAction::Continue
+                };
+                left = Expr::Guard {
+                    value: Box::new(left),
+                    action,
+                    when_truthy: op == "and",
                 };
                 continue;
             }
@@ -808,18 +1082,66 @@ impl Parser {
                 right: Box::new(right),
             };
         }
+        while self.eat_sym("::") {
+            // Type assertions are compile-time only.
+            self.skip_cast_type();
+        }
         Ok(left)
+    }
+
+    /// Consumes a type annotation that must stay on the current line (used by
+    /// `value :: Type` casts so following statements are not swallowed).
+    fn skip_cast_type(&mut self) {
+        let line = self.cur_token().line;
+        let mut depth: i32 = 0;
+        while !matches!(self.cur(), Tok::Eof) {
+            if depth == 0 && self.cur_token().line > line {
+                break;
+            }
+            match self.cur().clone() {
+                Tok::Sym(s) if s == "(" || s == "{" || s == "[" || s == "<" => {
+                    depth += 1;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == "<<" => {
+                    depth += 2;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == ")" || s == "}" || s == "]" || s == ">" => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                    self.advance();
+                }
+                Tok::Sym(s) if s == ">>" => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 2;
+                    self.advance();
+                }
+                Tok::Sym(s) if depth == 0 && (s == "," || s == ";") => break,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
     }
 
     fn binary_op(&self) -> Option<(String, u8, bool)> {
         let (op, prec, right) = match self.cur() {
-            Tok::Sym(s) if s == ".." => (s.clone(), 5, true),
+            Tok::Sym(s) if s == ".." => (s.clone(), 8, true),
             Tok::Sym(s) if matches!(s.as_str(), "==" | "~=" | "<" | ">" | "<=" | ">=") => {
                 (s.clone(), 3, false)
             }
-            Tok::Sym(s) if s == "+" || s == "-" => (s.clone(), 6, false),
-            Tok::Sym(s) if s == "*" || s == "/" || s == "//" || s == "%" => (s.clone(), 7, false),
-            Tok::Sym(s) if s == "^" => (s.clone(), 10, true),
+            Tok::Sym(s) if s == "|" => (s.clone(), 4, false),
+            Tok::Sym(s) if s == "~" => (s.clone(), 5, false),
+            Tok::Sym(s) if s == "&" => (s.clone(), 6, false),
+            Tok::Sym(s) if s == "<<" || s == ">>" => (s.clone(), 7, false),
+            Tok::Sym(s) if s == "+" || s == "-" => (s.clone(), 9, false),
+            Tok::Sym(s) if s == "*" || s == "/" || s == "//" || s == "%" => (s.clone(), 10, false),
+            Tok::Sym(s) if s == "^" => (s.clone(), 12, true),
             Tok::Word(w) if w == "or" => (w.clone(), 1, false),
             Tok::Word(w) if w == "and" => (w.clone(), 2, false),
             Tok::Word(w) if w == "is" => (w.clone(), 3, false),
@@ -832,25 +1154,25 @@ impl Parser {
         if self.eat_sym("-") {
             return Ok(Expr::Unary {
                 op: "-".into(),
-                expr: Box::new(self.parse_expr_prec(9)?),
+                expr: Box::new(self.parse_expr_prec(11)?),
             });
         }
         if self.eat_sym("#") {
             return Ok(Expr::Unary {
                 op: "#".into(),
-                expr: Box::new(self.parse_expr_prec(9)?),
+                expr: Box::new(self.parse_expr_prec(11)?),
             });
         }
         if self.eat_sym("~") {
             return Ok(Expr::Unary {
                 op: "~".into(),
-                expr: Box::new(self.parse_expr_prec(9)?),
+                expr: Box::new(self.parse_expr_prec(11)?),
             });
         }
         if self.eat_word("not") {
             return Ok(Expr::Unary {
                 op: "not".into(),
-                expr: Box::new(self.parse_expr_prec(9)?),
+                expr: Box::new(self.parse_expr_prec(11)?),
             });
         }
         self.parse_postfix()
@@ -859,6 +1181,12 @@ impl Parser {
     fn parse_postfix(&mut self) -> PResult<Expr> {
         let mut expr = self.parse_primary()?;
         loop {
+            // Explicit type instantiation: `f::<T>(args)`.
+            if self.at_sym("::") && self.peek(1).is_sym("<") {
+                self.advance();
+                self.skip_balanced("<", ">");
+                continue;
+            }
             if self.eat_sym(".") {
                 if let Tok::Number(n) = self.cur().clone() {
                     self.advance();
@@ -967,7 +1295,8 @@ impl Parser {
                     "true" => Ok(Expr::Bool(true)),
                     "false" => Ok(Expr::Bool(false)),
                     "none" => Ok(Expr::None),
-                    "try" => Ok(Expr::Try(Box::new(self.parse_expr_prec(9)?))),
+                    "if" => self.parse_if_expr(),
+                    "try" => Ok(Expr::Try(Box::new(self.parse_expr_prec(11)?))),
                     "do" => {
                         // `do ... give value` ends at `give`; Luwu does not
                         // require an extra `end` after the final value.
@@ -1020,6 +1349,43 @@ impl Parser {
                 other
             )),
         }
+    }
+
+    fn parse_if_expr(&mut self) -> PResult<Expr> {
+        if self.at_word("const") || self.at_word("local") {
+            self.advance();
+            let name = self.expect_name()?;
+            self.expect_sym("=")?;
+            let expr = self.parse_expr()?;
+            let when_clauses = self.parse_when_clauses()?;
+            self.expect_word("then")?;
+            let then_expr = self.parse_expr()?;
+            self.expect_word("else")?;
+            let else_expr = self.parse_expr()?;
+            return Ok(Expr::ConstConditional {
+                name,
+                expr: Box::new(expr),
+                when_clauses,
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            });
+        }
+        let cond = self.parse_expr()?;
+        self.expect_word("then")?;
+        let value = self.parse_expr()?;
+        let mut branches = vec![(cond, value)];
+        while self.eat_word("elseif") {
+            let c = self.parse_expr()?;
+            self.expect_word("then")?;
+            let v = self.parse_expr()?;
+            branches.push((c, v));
+        }
+        self.expect_word("else")?;
+        let else_expr = self.parse_expr()?;
+        Ok(Expr::Conditional {
+            branches,
+            else_expr: Box::new(else_expr),
+        })
     }
 
     fn parse_table(&mut self) -> PResult<Expr> {

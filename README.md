@@ -206,13 +206,24 @@ Relative paths are preserved, the `.luwu` extension is replaced with `.luau`, an
 ## Supported constructs
 
 - erasure of types, generic parameters, and `type` aliases;
-- `const`/`local`, functions, default values;
+- `const`/`local`, multiple assignment, functions, default values;
+- numeric `for` loops, generic `for`, `break`/`continue`;
+- `if`/`elseif`, `if` expressions, `if const`/`if local`, `when` chains,
+  `while const`, and `for ... when`;
 - classes (primary constructor, POD, `__init`, fields/methods, statics, metamethods);
 - traits (`expect`, `needs`, override, `final`, parameterized traits, `__create`/`__implemented`);
 - `class.*` (`isinstance`, `of`, `name`, `fields`, `member`, `implements`);
-- `none`, bundles/restructuring/destructuring, comprehensions;
-- `or return`, `if const ... when`, `do ... give`, `for ... when`;
-- `try` / `is Ok` / `is Err`, `table.drop`, and other features from Luwu examples.
+- `none` with Luwu truthiness, bundles/restructuring/destructuring, comprehensions;
+- `or return`, `or break`, `or continue`, `and break`, `or continue` guards,
+  `do ... give` expressions;
+- `try` / `is Ok` / `is Err`, `table.drop`, and other features from Luwu examples;
+- Luau-compatible declarations (`function M.foo`, `function M:foo`), attributes
+  (`@native`), type assertions (`::`), long strings/comments, and bitwise
+  operators (lowered to `bit32`).
+
+See [`tests/qa`](tests/qa/README.md) for the end-to-end QA corpus and the list of
+known limitations (advanced destructuring, class primitives, module exports, and
+other host-specific features).
 
 ## Source layout
 

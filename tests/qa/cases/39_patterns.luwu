@@ -1,0 +1,32 @@
+const function process(items: { number }): { string }
+    return {
+        for idx, value in items
+        when value > 1
+        give `{idx}:{value}`
+    }
+end
+print(table.concat(process({ 1, 2, 3 }), "|"))
+
+const function table_multi(): (number, number, number)
+    return 1, 2, 3
+end
+const a, b, c = table_multi()
+print(a, b, c)
+
+local x, y
+x, y = 5, 6
+print(x, y)
+
+const .{ one, two } = { one = 1, two = 2 }
+print(one, two)
+const .(p, q) = .(7, 8)
+print(p, q)
+
+const list = { { title = "Dune", year = 1965 }, { title = "Hyperion", year = 1989 } }
+for _, .{ title, year } in list do
+    print(`{title} came out in {year}`)
+end
+
+const row = .("a", "b", "c", "d")
+const .(_, second, _, fourth) = row
+print(second, fourth)

@@ -1,0 +1,5 @@
+local health = 25
+const status = if health > 50 then "healthy" elseif health > 0 then "hurt" else "down"
+print(status)
+const nested = if health > 50 then (if health > 90 then "great" else "ok") else "low"
+print(nested)

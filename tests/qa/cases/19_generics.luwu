@@ -1,0 +1,13 @@
+const function identity<T>(value: T): T
+    return value
+end
+print(identity(42))
+
+const function map<T, U>(list: { T }, f: (T) -> U): { U }
+    const out = {}
+    for _, v in list do
+        table.insert(out, f(v))
+    end
+    return out
+end
+print(table.concat(map({ 1, 2, 3 }, function(v) return v * 2 end), ","))

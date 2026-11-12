@@ -1,0 +1,49 @@
+const function parse_number(text: string): number
+    return tonumber(text) or error(`bad: {text}`, 2)
+end
+
+const function report(text: string): string
+    const result = try parse_number(text)
+    if result is Ok.(value) then
+        return `ok {value}`
+    else
+        return "failed"
+    end
+end
+print(report("42"))
+print(report("nope"))
+
+const function report_err(text: string): string
+    const result = try parse_number(text)
+    if result is Err.(message) then
+        return `err {message}`
+    end
+    return "no error"
+end
+print(report_err("nope"))
+print(report_err("7"))
+
+class Parser
+    function parse(self, text: string): number
+        return tonumber(text) or error("bad", 2)
+    end
+end
+
+const function method_try(p: Parser, text: string): string
+    const result = try p:parse(text)
+    if result is Ok.(value) then
+        return `value {value}`
+    end
+    return "method failed"
+end
+print(method_try(Parser(), "13"))
+print(method_try(Parser(), "x"))
+
+const function non_call_try(): string
+    const result = try (1 + 2)
+    if result is Ok.(value) then
+        return `sum {value}`
+    end
+    return "nope"
+end
+print(non_call_try())

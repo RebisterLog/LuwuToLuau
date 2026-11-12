@@ -25,6 +25,7 @@ pub struct Lowerer {
     helpers: HashSet<String>,
     none_used: bool,
     none_declared: bool,
+    source_uses_none: bool,
     none_returning: HashSet<String>,
     maybe_none: HashSet<String>,
     try_bindings: HashMap<String, TryBinding>,
@@ -51,6 +52,7 @@ impl Lowerer {
             helpers: HashSet::new(),
             none_used: false,
             none_declared,
+            source_uses_none: program_uses_none(&program.stmts),
             none_returning,
             maybe_none: HashSet::new(),
             try_bindings: HashMap::new(),
@@ -65,6 +67,11 @@ impl Lowerer {
         }
 
         let mut prefix = Vec::new();
+        if (self.helpers.contains("truthy") || self.helpers.contains("fields"))
+            && !self.none_declared
+        {
+            self.none_used = true;
+        }
         if self.none_used && !self.none_declared {
             prefix.push(LStmt::raw(
                 "const none = setmetatable({}, {\n    __tostring = function()\n        return \"none\"\n    end,\n})",
@@ -73,6 +80,7 @@ impl Lowerer {
         if !self.helpers.is_empty() {
             let mut helper_src = String::new();
             for name in [
+                "truthy",
                 "isinstance",
                 "of",
                 "name",
@@ -121,6 +129,7 @@ impl Lowerer {
                 let prefix = match kind {
                     BindingKind::Const => format!("const function {name}"),
                     BindingKind::Local => format!("local function {name}"),
+                    BindingKind::Global => format!("function {name}"),
                 };
                 Ok(vec![LStmt::Function {
                     prefix,
@@ -153,7 +162,44 @@ impl Lowerer {
                 });
                 Ok(out)
             }
-            Stmt::Call(expr) => Ok(vec![LStmt::Call(self.lower_expr(expr)?)]),
+            Stmt::Call(expr) => {
+                if let Expr::Guard {
+                    value,
+                    action,
+                    when_truthy,
+                } = expr
+                {
+                    let lowered = self.lower_expr(value)?;
+                    let cond = if *when_truthy {
+                        self.truthiness(lowered)
+                    } else {
+                        self.negated_truthiness(lowered)
+                    };
+                    let flow = match action {
+                        FlowAction::Break => LStmt::Break,
+                        FlowAction::Continue => LStmt::Continue,
+                    };
+                    return Ok(vec![LStmt::If {
+                        cond,
+                        then_body: vec![flow],
+                        else_body: None,
+                    }]);
+                }
+                if let Expr::OrFlow { value, action } = expr {
+                    let lowered = self.lower_expr(value)?;
+                    let cond = self.negated_truthiness(lowered);
+                    let flow = match action {
+                        FlowAction::Break => LStmt::Break,
+                        FlowAction::Continue => LStmt::Continue,
+                    };
+                    return Ok(vec![LStmt::If {
+                        cond,
+                        then_body: vec![flow],
+                        else_body: None,
+                    }]);
+                }
+                Ok(vec![LStmt::Call(self.lower_expr(expr)?)])
+            }
             Stmt::Return(exprs) => {
                 let mut out = Vec::new();
                 for expr in exprs {
@@ -168,29 +214,74 @@ impl Lowerer {
             Stmt::IfBind {
                 name,
                 expr,
-                when_cond,
+                when_clauses,
                 then_body,
                 else_body,
-            } => self.lower_if_bind(
-                name,
-                expr,
-                when_cond.as_ref(),
-                then_body,
-                else_body.as_ref(),
-            ),
+            } => self.lower_if_bind(name, expr, when_clauses, then_body, else_body.as_ref()),
             Stmt::For {
                 patterns,
                 iter,
-                when_clause,
+                when_clauses,
                 body,
-            } => self.lower_for(patterns, iter, when_clause.as_ref(), body),
+            } => self.lower_for(patterns, iter, when_clauses, body),
+            Stmt::NumericFor {
+                name,
+                start,
+                stop,
+                step,
+                when_clauses,
+                body,
+            } => {
+                let start = self.lower_expr(start)?;
+                let stop = self.lower_expr(stop)?;
+                let step = match step {
+                    Some(step) => Some(self.lower_expr(step)?),
+                    None => None,
+                };
+                let body_lowered = self.lower_block(body)?;
+                let body_out = self.lower_when_chain(when_clauses, body_lowered, None)?;
+                Ok(vec![LStmt::NumericFor {
+                    var: name.clone(),
+                    start,
+                    stop,
+                    step,
+                    body: body_out,
+                }])
+            }
+            Stmt::WhileBind {
+                name,
+                expr,
+                when_clauses,
+                body,
+            } => {
+                let value = self.lower_expr(expr)?;
+                let body_lowered = self.lower_block(body)?;
+                let break_else = Some(vec![LStmt::Break]);
+                let chain = self.lower_when_chain(when_clauses, body_lowered, break_else)?;
+                let cond = self.negated_truthiness(LExpr::ident(name));
+                Ok(vec![LStmt::While {
+                    cond: LExpr::Bool(true),
+                    body: vec![
+                        LStmt::Const {
+                            names: vec![name.clone()],
+                            exprs: vec![value],
+                        },
+                        LStmt::If {
+                            cond,
+                            then_body: vec![LStmt::Break],
+                            else_body: None,
+                        },
+                        LStmt::Do { body: chain },
+                    ],
+                }])
+            }
             Stmt::While { cond, body } => Ok(vec![LStmt::While {
-                cond: self.lower_expr(cond)?,
+                cond: self.lower_cond(cond)?,
                 body: self.lower_block(body)?,
             }]),
             Stmt::Repeat { body, cond } => Ok(vec![LStmt::Repeat {
                 body: self.lower_block(body)?,
-                cond: self.lower_expr(cond)?,
+                cond: self.lower_cond(cond)?,
             }]),
             Stmt::Do { body } => Ok(vec![LStmt::Do {
                 body: self.lower_block(body)?,
@@ -246,6 +337,10 @@ impl Lowerer {
                         names: vec![ok.clone(), value.clone()],
                         exprs: self.lower_try_call(inner)?,
                     },
+                    BindingKind::Global => LStmt::Local {
+                        names: vec![ok.clone(), value.clone()],
+                        exprs: self.lower_try_call(inner)?,
+                    },
                 });
                 self.try_bindings
                     .insert(name.clone(), TryBinding { ok, value });
@@ -253,20 +348,20 @@ impl Lowerer {
             }
         }
 
-        // `const x = y or return z` evaluates y once, then returns on nil.
+        // `const x = y or return z` (and `or break`/`or continue`) evaluates
+        // y once, then leaves the function/loop when y is falsy.
         if patterns.len() == 1 && exprs.len() == 1 {
-            if let Expr::OrReturn { value, fallback } = &exprs[0] {
+            let flow = match &exprs[0] {
+                Expr::OrReturn { value, fallback } => {
+                    Some((value.as_ref(), fallback.as_deref(), None))
+                }
+                Expr::OrFlow { value, action } => Some((value.as_ref(), None, Some(*action))),
+                _ => None,
+            };
+            if let Some((value, fallback, action)) = flow {
                 let name = match &patterns[0] {
                     Pattern::Name(n) => n.clone(),
                     _ => return Err("`or return` only supports a simple name".into()),
-                };
-                // The value can be `none` instead of `nil`: then the guard has
-                // to compare against the sentinel.
-                let empty = if self.expr_may_be_none(value) {
-                    self.none_used = true;
-                    LExpr::ident("none")
-                } else {
-                    LExpr::Nil
                 };
                 if self.expr_may_be_none(value) {
                     self.maybe_none.insert(name.clone());
@@ -276,18 +371,24 @@ impl Lowerer {
                         names: vec![name.clone()],
                         exprs: vec![self.lower_expr(value)?],
                     },
-                    BindingKind::Local => LStmt::Local {
+                    _ => LStmt::Local {
                         names: vec![name.clone()],
                         exprs: vec![self.lower_expr(value)?],
                     },
                 });
+                let guard = self.negated_truthiness(LExpr::ident(name.clone()));
+                let then_body = if let Some(fallback) = fallback {
+                    vec![LStmt::Return(vec![self.lower_expr(fallback)?])]
+                } else {
+                    vec![match action {
+                        Some(FlowAction::Break) => LStmt::Break,
+                        Some(FlowAction::Continue) => LStmt::Continue,
+                        None => LStmt::Return(Vec::new()),
+                    }]
+                };
                 out.push(LStmt::If {
-                    cond: LExpr::Binary {
-                        op: "==".into(),
-                        left: Box::new(LExpr::ident(name.clone())),
-                        right: Box::new(empty),
-                    },
-                    then_body: vec![LStmt::Return(vec![self.lower_expr(fallback)?])],
+                    cond: guard,
+                    then_body,
                     else_body: None,
                 });
                 return Ok(out);
@@ -312,6 +413,10 @@ impl Lowerer {
                         exprs: vec![LExpr::Table(Vec::new())],
                     },
                     BindingKind::Local => LStmt::Local {
+                        names: vec![name.clone()],
+                        exprs: vec![LExpr::Table(Vec::new())],
+                    },
+                    BindingKind::Global => LStmt::Local {
                         names: vec![name.clone()],
                         exprs: vec![LExpr::Table(Vec::new())],
                     },
@@ -390,6 +495,10 @@ impl Lowerer {
                 names,
                 exprs: values,
             },
+            BindingKind::Global => LStmt::Local {
+                names,
+                exprs: values,
+            },
         });
         Ok(out)
     }
@@ -462,7 +571,7 @@ impl Lowerer {
         &mut self,
         name: &str,
         expr: &Expr,
-        when_cond: Option<&Expr>,
+        when_clauses: &[WhenClause],
         then_body: &[Stmt],
         else_body: Option<&Vec<Stmt>>,
     ) -> Result<Vec<LStmt>, String> {
@@ -475,35 +584,62 @@ impl Lowerer {
         if self.expr_may_be_none(expr) {
             self.maybe_none.insert(name.to_string());
         }
-        let mut cond = LExpr::Binary {
-            op: "~=".into(),
-            left: Box::new(LExpr::ident(name)),
-            right: Box::new(if self.expr_may_be_none(expr) {
-                LExpr::ident("none")
-            } else {
-                LExpr::Nil
-            }),
-        };
-        if let Some(w) = when_cond {
-            cond = LExpr::Binary {
-                op: "and".into(),
-                left: Box::new(cond),
-                right: Box::new(self.lower_expr(w)?),
-            };
-        }
+        let body = self.lower_block(then_body)?;
+        let else_lowered = else_body.map(|b| self.lower_block(b)).transpose()?;
+        let chain = self.lower_when_chain(when_clauses, body, else_lowered.clone())?;
+        let cond = self.truthiness(LExpr::ident(name));
         out.push(LStmt::If {
             cond,
-            then_body: self.lower_block(then_body)?,
-            else_body: else_body.map(|b| self.lower_block(b)).transpose()?,
+            then_body: chain,
+            else_body: else_lowered,
         });
         Ok(out)
+    }
+
+    /// Builds a short-circuiting chain of `when` clauses. The first failing
+    /// clause skips to `else_body` (or to `{}` when there is no else).
+    fn lower_when_chain(
+        &mut self,
+        clauses: &[WhenClause],
+        body: Vec<LStmt>,
+        else_body: Option<Vec<LStmt>>,
+    ) -> Result<Vec<LStmt>, String> {
+        let mut current = body;
+        for clause in clauses.iter().rev() {
+            match clause {
+                WhenClause::Cond(cond) => {
+                    let cond = self.lower_cond(cond)?;
+                    current = vec![LStmt::If {
+                        cond,
+                        then_body: current,
+                        else_body: else_body.clone(),
+                    }];
+                }
+                WhenClause::Bind { name, expr } => {
+                    let value = self.lower_expr(expr)?;
+                    let cond = self.truthiness(LExpr::ident(name));
+                    current = vec![
+                        LStmt::Const {
+                            names: vec![name.clone()],
+                            exprs: vec![value],
+                        },
+                        LStmt::If {
+                            cond,
+                            then_body: current,
+                            else_body: else_body.clone(),
+                        },
+                    ];
+                }
+            }
+        }
+        Ok(current)
     }
 
     fn lower_for(
         &mut self,
         patterns: &[Pattern],
         iter: &Expr,
-        when_clause: Option<&WhenClause>,
+        when_clauses: &[WhenClause],
         body: &[Stmt],
     ) -> Result<Vec<LStmt>, String> {
         let iter_out = self.lower_expr(iter)?;
@@ -511,47 +647,8 @@ impl Lowerer {
         if vars.len() == 1 && !is_iterator_call(iter) {
             vars.insert(0, "_".to_string());
         }
-        let mut body_out = Vec::new();
-        if let Some(clause) = when_clause {
-            match clause {
-                WhenClause::Cond(c) => {
-                    let cond = self.lower_cond(c)?;
-                    body_out.push(LStmt::If {
-                        cond,
-                        then_body: self.lower_block(body)?,
-                        else_body: None,
-                    });
-                    body_out = {
-                        let mut v = destructure;
-                        v.extend(body_out);
-                        v
-                    };
-                    return Ok(vec![LStmt::For {
-                        vars,
-                        iter: iter_out,
-                        body: body_out,
-                    }]);
-                }
-                WhenClause::Bind { name, expr } => {
-                    destructure.push(LStmt::Const {
-                        names: vec![name.clone()],
-                        exprs: vec![self.lower_expr(expr)?],
-                    });
-                    let cond = LExpr::Binary {
-                        op: "~=".into(),
-                        left: Box::new(LExpr::ident(name)),
-                        right: Box::new(LExpr::Nil),
-                    };
-                    body_out.push(LStmt::If {
-                        cond,
-                        then_body: self.lower_block(body)?,
-                        else_body: None,
-                    });
-                }
-            }
-        } else {
-            body_out = self.lower_block(body)?;
-        }
+        let body_lowered = self.lower_block(body)?;
+        let body_out = self.lower_when_chain(when_clauses, body_lowered, None)?;
         destructure.extend(body_out);
         Ok(vec![LStmt::For {
             vars,
@@ -595,17 +692,34 @@ impl Lowerer {
     }
 
     fn lower_cond(&mut self, expr: &Expr) -> Result<LExpr, String> {
-        // `if found then` for a value that can be `none` means "not none".
-        if let Expr::Ident(name) = expr {
-            if self.maybe_none.contains(name) {
-                return Ok(LExpr::Binary {
-                    op: "~=".into(),
-                    left: Box::new(LExpr::ident(name)),
-                    right: Box::new(LExpr::ident("none")),
-                });
+        let lowered = self.lower_expr(expr)?;
+        Ok(self.truthiness(lowered))
+    }
+
+    /// Luwu treats `none` as falsy while the Luau sentinel is a truthy
+    /// table, so programs that use `none` route conditions through a helper.
+    fn truthiness(&mut self, expr: LExpr) -> LExpr {
+        if self.source_uses_none {
+            self.helpers.insert("truthy".into());
+            LExpr::call(LExpr::ident("__luwu_truthy"), vec![expr])
+        } else {
+            expr
+        }
+    }
+
+    fn negated_truthiness(&mut self, expr: LExpr) -> LExpr {
+        if self.source_uses_none {
+            self.helpers.insert("truthy".into());
+            LExpr::Unary {
+                op: "not".into(),
+                expr: Box::new(LExpr::call(LExpr::ident("__luwu_truthy"), vec![expr])),
+            }
+        } else {
+            LExpr::Unary {
+                op: "not".into(),
+                expr: Box::new(expr),
             }
         }
-        self.lower_expr(expr)
     }
 
     fn lower_is_cond(
@@ -648,34 +762,61 @@ impl Lowerer {
         (format!("{binding}_ok"), format!("{binding}_value"))
     }
 
-    fn lower_try_call(&mut self, expr: &Expr) -> Result<Vec<LExpr>, String> {
-        if let Expr::Call { func, args, .. } = expr {
-            let f = self.lower_expr(func)?;
-            let mut call_args = vec![f];
-            for a in args {
-                call_args.push(self.lower_expr(a)?);
-            }
-            Ok(vec![LExpr::call(LExpr::ident("pcall"), call_args)])
-        } else {
-            let e = self.lower_expr(expr)?;
-            let body = vec![LStmt::Return(vec![e])];
-            Ok(vec![LExpr::Iife {
-                params: Vec::new(),
-                body,
-                args: Vec::new(),
-            }])
-        }
-    }
-
     fn expr_may_be_none(&self, expr: &Expr) -> bool {
         match expr {
             Expr::None => true,
             Expr::Paren(e) => self.expr_may_be_none(e),
+            Expr::Ident(n) => self.maybe_none.contains(n),
+            Expr::Conditional {
+                branches,
+                else_expr,
+            } => {
+                branches.iter().any(|(_, v)| self.expr_may_be_none(v))
+                    || self.expr_may_be_none(else_expr)
+            }
+            Expr::ConstConditional {
+                then_expr,
+                else_expr,
+                ..
+            } => self.expr_may_be_none(then_expr) || self.expr_may_be_none(else_expr),
+            Expr::OrReturn { value, fallback } => {
+                self.expr_may_be_none(value)
+                    || fallback.as_ref().is_some_and(|f| self.expr_may_be_none(f))
+            }
+            Expr::OrFlow { value, .. } => self.expr_may_be_none(value),
+            Expr::Binary { op, left, right } if op == "and" || op == "or" => {
+                self.expr_may_be_none(left) || self.expr_may_be_none(right)
+            }
+            Expr::DoBlock { give, .. } => self.expr_may_be_none(give),
             Expr::Call { func, .. } => match func.as_ref() {
                 Expr::Ident(n) => self.none_returning.contains(n),
                 _ => false,
             },
             _ => false,
+        }
+    }
+
+    fn lower_try_call(&mut self, expr: &Expr) -> Result<Vec<LExpr>, String> {
+        match expr {
+            Expr::Call { func, args, method } if !*method => {
+                let f = self.lower_expr(func)?;
+                let mut call_args = vec![f];
+                for a in args {
+                    call_args.push(self.lower_expr(a)?);
+                }
+                Ok(vec![LExpr::call(LExpr::ident("pcall"), call_args)])
+            }
+            _ => {
+                // Method calls need their receiver and non-call expressions
+                // must not be executed outside the pcall.
+                let value = self.lower_expr(expr)?;
+                let body = vec![LStmt::Return(vec![value])];
+                let func = LExpr::Function {
+                    params: Vec::new(),
+                    body,
+                };
+                Ok(vec![LExpr::call(LExpr::ident("pcall"), vec![func])])
+            }
         }
     }
 
@@ -729,16 +870,71 @@ impl Lowerer {
             }
             Expr::Field(base, name) => Ok(LExpr::field(self.lower_expr(base)?, name.clone())),
             Expr::Call { func, args, method } => self.lower_call(func, args, *method),
-            Expr::Unary { op, expr } => Ok(LExpr::Unary {
-                op: op.clone(),
-                expr: Box::new(self.lower_expr(expr)?),
-            }),
-            Expr::Binary { op, left, right } => Ok(LExpr::Binary {
-                op: op.clone(),
-                left: Box::new(self.lower_expr(left)?),
-                right: Box::new(self.lower_expr(right)?),
-            }),
-            Expr::OrReturn { .. } => Err("`or return` is only supported in a declaration".into()),
+            Expr::Unary { op, expr } => {
+                let inner = self.lower_expr(expr)?;
+                if op == "~" {
+                    return Ok(LExpr::call(LExpr::ident("bit32.bnot"), vec![inner]));
+                }
+                if op == "not" && self.source_uses_none {
+                    Ok(self.negated_truthiness(inner))
+                } else {
+                    Ok(LExpr::Unary {
+                        op: op.clone(),
+                        expr: Box::new(inner),
+                    })
+                }
+            }
+            Expr::Binary { op, left, right } => {
+                let left_out = self.lower_expr(left)?;
+                let right_out = self.lower_expr(right)?;
+                let bitwise = match op.as_str() {
+                    "&" => Some("bit32.band"),
+                    "|" => Some("bit32.bor"),
+                    "~" => Some("bit32.bxor"),
+                    "<<" => Some("bit32.lshift"),
+                    ">>" => Some("bit32.rshift"),
+                    _ => None,
+                };
+                if let Some(func) = bitwise {
+                    return Ok(LExpr::call(LExpr::ident(func), vec![left_out, right_out]));
+                }
+                if (op == "and" || op == "or") && self.source_uses_none {
+                    let tmp = self.temp("op");
+                    let cond = self.truthiness(LExpr::ident(tmp.clone()));
+                    let (then_value, else_value) = if op == "and" {
+                        (right_out, LExpr::ident(tmp.clone()))
+                    } else {
+                        (LExpr::ident(tmp.clone()), right_out)
+                    };
+                    let body = vec![
+                        LStmt::Local {
+                            names: vec![tmp],
+                            exprs: vec![left_out],
+                        },
+                        LStmt::If {
+                            cond,
+                            then_body: vec![LStmt::Return(vec![then_value])],
+                            else_body: Some(vec![LStmt::Return(vec![else_value])]),
+                        },
+                    ];
+                    return Ok(LExpr::Iife {
+                        params: Vec::new(),
+                        body,
+                        args: Vec::new(),
+                    });
+                }
+                Ok(LExpr::Binary {
+                    op: op.clone(),
+                    left: Box::new(left_out),
+                    right: Box::new(right_out),
+                })
+            }
+            Expr::OrReturn { .. } | Expr::OrFlow { .. } => Err(
+                "`or return`/`or break`/`or continue` are only supported in a declaration".into(),
+            ),
+            Expr::Guard { .. } => {
+                Err("`and break`/`or continue` are only supported in a statement".into())
+            }
             Expr::Try(_) => Err("`try` is only supported as a declaration initializer".into()),
             Expr::DoBlock { body, give } => {
                 let mut b = self.with_function_scope(|this| this.lower_block(body))?;
@@ -791,6 +987,62 @@ impl Lowerer {
                 })
             }
             Expr::Is { .. } => Err("`is Ok/Err` is only supported in an if condition".into()),
+            Expr::Conditional {
+                branches,
+                else_expr,
+            } => {
+                let mut tail = vec![LStmt::Return(vec![self.lower_expr(else_expr)?])];
+                for (cond, value) in branches.iter().rev() {
+                    let cond = self.lower_cond(cond)?;
+                    let value = self.lower_expr(value)?;
+                    tail = vec![LStmt::If {
+                        cond,
+                        then_body: vec![LStmt::Return(vec![value])],
+                        else_body: Some(tail),
+                    }];
+                }
+                Ok(LExpr::Iife {
+                    params: Vec::new(),
+                    body: tail,
+                    args: Vec::new(),
+                })
+            }
+            Expr::ConstConditional {
+                name,
+                expr,
+                when_clauses,
+                then_expr,
+                else_expr,
+            } => {
+                let value = self.lower_expr(expr)?;
+                if self.expr_may_be_none(expr) {
+                    self.maybe_none.insert(name.clone());
+                }
+                let then_value = self.lower_expr(then_expr)?;
+                let else_value = self.lower_expr(else_expr)?;
+                let chain = self.lower_when_chain(
+                    when_clauses,
+                    vec![LStmt::Return(vec![then_value])],
+                    Some(vec![LStmt::Return(vec![else_value.clone()])]),
+                )?;
+                let cond = self.truthiness(LExpr::ident(name));
+                let body = vec![
+                    LStmt::Local {
+                        names: vec![name.clone()],
+                        exprs: vec![value],
+                    },
+                    LStmt::If {
+                        cond,
+                        then_body: chain,
+                        else_body: Some(vec![LStmt::Return(vec![else_value])]),
+                    },
+                ];
+                Ok(LExpr::Iife {
+                    params: Vec::new(),
+                    body,
+                    args: Vec::new(),
+                })
+            }
             Expr::Function { params, body, .. } => {
                 let (p, defaults) = self.lower_params(params)?;
                 let mut b = defaults;
@@ -972,7 +1224,15 @@ impl Lowerer {
             .members
             .iter()
             .filter_map(|m| match m {
-                ClassMember::Field(f) if !f.is_expect => Some(f),
+                ClassMember::Field(f) if !f.is_expect && !f.is_static => Some(f),
+                _ => None,
+            })
+            .collect();
+        let static_fields: Vec<&FieldDecl> = class
+            .members
+            .iter()
+            .filter_map(|m| match m {
+                ClassMember::Field(f) if !f.is_expect && f.is_static => Some(f),
                 _ => None,
             })
             .collect();
@@ -1074,6 +1334,19 @@ impl Lowerer {
             exprs: vec![LExpr::ident(class.name.clone())],
         });
 
+        for f in &static_fields {
+            if let Some(default) = &f.default {
+                out.push(LStmt::Assign {
+                    targets: vec![LExpr::field(
+                        LExpr::ident(class.name.clone()),
+                        f.name.clone(),
+                    )],
+                    op: None,
+                    exprs: vec![self.lower_expr(default)?],
+                });
+            }
+        }
+
         if self.usage.name {
             out.push(LStmt::Assign {
                 targets: vec![LExpr::field(LExpr::ident(class.name.clone()), "__name")],
@@ -1106,10 +1379,8 @@ impl Lowerer {
         let has_default_fields = fields.iter().any(|f| f.default.is_some());
         let is_primary = !class.params.is_empty();
         let is_init_ctor = !is_primary && has_init;
-        let is_pod = !is_primary
-            && !is_init_ctor
-            && !class.has_ctor_parens
-            && (has_default_fields || !all_trait_fields.is_empty());
+        let is_pod =
+            !is_primary && !is_init_ctor && (has_default_fields || !all_trait_fields.is_empty());
 
         if is_primary {
             let mut defaults = Vec::new();
@@ -1205,7 +1476,7 @@ impl Lowerer {
                     ],
                 )],
             });
-            if !fields.is_empty() {
+            if !fields.is_empty() || !all_trait_fields.is_empty() {
                 body.push(LStmt::For {
                     vars: vec!["key".into(), "value".into()],
                     iter: LExpr::Binary {
@@ -1382,24 +1653,26 @@ impl Lowerer {
         let mut entries = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         for (i, p) in class.params.iter().enumerate() {
-            if p.visibility.as_deref() == Some("private") {
-                continue;
-            }
             seen.insert(p.name.clone());
             entries.push(LField::Positional(LExpr::Table(vec![
                 LField::Named("name".into(), LExpr::Str(format!("{:?}", p.name))),
                 LField::Named("isconst".into(), LExpr::Bool(p.is_const)),
+                LField::Named(
+                    "visibility".into(),
+                    LExpr::Str(format!("{:?}", p.visibility.as_deref().unwrap_or("public"))),
+                ),
                 LField::Named("position".into(), LExpr::Number((i + 1).to_string())),
             ])));
         }
         for f in fields {
-            if f.visibility.as_deref() == Some("private") {
-                continue;
-            }
             seen.insert(f.name.clone());
             entries.push(LField::Positional(LExpr::Table(vec![
                 LField::Named("name".into(), LExpr::Str(format!("{:?}", f.name))),
                 LField::Named("isconst".into(), LExpr::Bool(f.is_const)),
+                LField::Named(
+                    "visibility".into(),
+                    LExpr::Str(format!("{:?}", f.visibility.as_deref().unwrap_or("public"))),
+                ),
                 LField::Named("position".into(), LExpr::Nil),
             ])));
         }
@@ -1410,6 +1683,7 @@ impl Lowerer {
             entries.push(LField::Positional(LExpr::Table(vec![
                 LField::Named("name".into(), LExpr::Str(format!("{:?}", name))),
                 LField::Named("isconst".into(), LExpr::Bool(*is_const)),
+                LField::Named("visibility".into(), LExpr::Str("\"public\"".into())),
                 LField::Named("position".into(), LExpr::Nil),
             ])));
         }
@@ -1762,7 +2036,7 @@ impl<'a> TraitInfo<'a> {
             // factory table directly, so this remains empty here.
             let _ = p;
         }
-        out.extend(self.fields());
+        out.extend(self.fields().into_iter().filter(|f| !f.is_static));
         out
     }
 
@@ -1849,14 +2123,17 @@ fn scan_stmts(stmts: &[Stmt], usage: &mut Usage) {
             }
             Stmt::IfBind {
                 expr,
-                when_cond,
+                when_clauses,
                 then_body,
                 else_body,
                 ..
             } => {
                 scan_expr(expr, usage);
-                if let Some(c) = when_cond {
-                    scan_expr(c, usage);
+                for clause in when_clauses {
+                    match clause {
+                        WhenClause::Cond(c) => scan_expr(c, usage),
+                        WhenClause::Bind { expr, .. } => scan_expr(expr, usage),
+                    }
                 }
                 scan_stmts(then_body, usage);
                 if let Some(b) = else_body {
@@ -1865,16 +2142,52 @@ fn scan_stmts(stmts: &[Stmt], usage: &mut Usage) {
             }
             Stmt::For {
                 iter,
-                when_clause,
+                when_clauses,
                 body,
                 ..
             } => {
                 scan_expr(iter, usage);
-                if let Some(WhenClause::Cond(c)) = when_clause {
-                    scan_expr(c, usage);
+                for clause in when_clauses {
+                    match clause {
+                        WhenClause::Cond(c) => scan_expr(c, usage),
+                        WhenClause::Bind { expr, .. } => scan_expr(expr, usage),
+                    }
                 }
-                if let Some(WhenClause::Bind { expr, .. }) = when_clause {
-                    scan_expr(expr, usage);
+                scan_stmts(body, usage);
+            }
+            Stmt::NumericFor {
+                start,
+                stop,
+                step,
+                when_clauses,
+                body,
+                ..
+            } => {
+                scan_expr(start, usage);
+                scan_expr(stop, usage);
+                if let Some(step) = step {
+                    scan_expr(step, usage);
+                }
+                for clause in when_clauses {
+                    match clause {
+                        WhenClause::Cond(c) => scan_expr(c, usage),
+                        WhenClause::Bind { expr, .. } => scan_expr(expr, usage),
+                    }
+                }
+                scan_stmts(body, usage);
+            }
+            Stmt::WhileBind {
+                expr,
+                when_clauses,
+                body,
+                ..
+            } => {
+                scan_expr(expr, usage);
+                for clause in when_clauses {
+                    match clause {
+                        WhenClause::Cond(c) => scan_expr(c, usage),
+                        WhenClause::Bind { expr, .. } => scan_expr(expr, usage),
+                    }
                 }
                 scan_stmts(body, usage);
             }
@@ -1974,7 +2287,37 @@ fn scan_expr(expr: &Expr, usage: &mut Usage) {
         }
         Expr::OrReturn { value, fallback } => {
             scan_expr(value, usage);
-            scan_expr(fallback, usage);
+            if let Some(fallback) = fallback {
+                scan_expr(fallback, usage);
+            }
+        }
+        Expr::OrFlow { value, .. } | Expr::Guard { value, .. } => scan_expr(value, usage),
+        Expr::Conditional {
+            branches,
+            else_expr,
+        } => {
+            for (c, v) in branches {
+                scan_expr(c, usage);
+                scan_expr(v, usage);
+            }
+            scan_expr(else_expr, usage);
+        }
+        Expr::ConstConditional {
+            expr,
+            when_clauses,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            scan_expr(expr, usage);
+            for clause in when_clauses {
+                match clause {
+                    WhenClause::Cond(c) => scan_expr(c, usage),
+                    WhenClause::Bind { expr, .. } => scan_expr(expr, usage),
+                }
+            }
+            scan_expr(then_expr, usage);
+            scan_expr(else_expr, usage);
         }
         Expr::Try(e) => scan_expr(e, usage),
         Expr::DoBlock { body, give } => {
@@ -2052,6 +2395,173 @@ fn collect_none_returning(stmts: &[Stmt], out: &mut HashSet<String>) {
     }
 }
 
+fn program_uses_none(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_uses_none)
+}
+
+fn stmt_uses_none(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Decl { exprs, .. } => exprs.iter().any(expr_uses_none),
+        Stmt::Function { body, .. } => program_uses_none(body),
+        Stmt::Assign { targets, exprs, .. } => {
+            targets.iter().any(expr_uses_none) || exprs.iter().any(expr_uses_none)
+        }
+        Stmt::Call(e) | Stmt::Give(e) => expr_uses_none(e),
+        Stmt::Return(exprs) => exprs.iter().any(expr_uses_none),
+        Stmt::If {
+            branches,
+            else_body,
+        } => {
+            branches
+                .iter()
+                .any(|(c, b)| expr_uses_none(c) || program_uses_none(b))
+                || else_body.as_ref().is_some_and(|b| program_uses_none(b))
+        }
+        Stmt::IfBind {
+            expr,
+            when_clauses,
+            then_body,
+            else_body,
+            ..
+        } => {
+            expr_uses_none(expr)
+                || when_clauses.iter().any(|c| match c {
+                    WhenClause::Cond(c) => expr_uses_none(c),
+                    WhenClause::Bind { expr, .. } => expr_uses_none(expr),
+                })
+                || program_uses_none(then_body)
+                || else_body.as_ref().is_some_and(|b| program_uses_none(b))
+        }
+        Stmt::For {
+            iter,
+            when_clauses,
+            body,
+            ..
+        } => {
+            expr_uses_none(iter)
+                || when_clauses.iter().any(|c| match c {
+                    WhenClause::Cond(c) => expr_uses_none(c),
+                    WhenClause::Bind { expr, .. } => expr_uses_none(expr),
+                })
+                || program_uses_none(body)
+        }
+        Stmt::NumericFor {
+            start,
+            stop,
+            step,
+            when_clauses,
+            body,
+            ..
+        } => {
+            expr_uses_none(start)
+                || expr_uses_none(stop)
+                || step.as_ref().is_some_and(expr_uses_none)
+                || when_clauses.iter().any(|c| match c {
+                    WhenClause::Cond(c) => expr_uses_none(c),
+                    WhenClause::Bind { expr, .. } => expr_uses_none(expr),
+                })
+                || program_uses_none(body)
+        }
+        Stmt::WhileBind {
+            expr,
+            when_clauses,
+            body,
+            ..
+        } => {
+            expr_uses_none(expr)
+                || when_clauses.iter().any(|c| match c {
+                    WhenClause::Cond(c) => expr_uses_none(c),
+                    WhenClause::Bind { expr, .. } => expr_uses_none(expr),
+                })
+                || program_uses_none(body)
+        }
+        Stmt::While { cond, body } => expr_uses_none(cond) || program_uses_none(body),
+        Stmt::Repeat { body, cond } => program_uses_none(body) || expr_uses_none(cond),
+        Stmt::Do { body } => program_uses_none(body),
+        Stmt::Class(c) => {
+            c.implements
+                .iter()
+                .any(|i| i.args.iter().any(expr_uses_none))
+                || c.members.iter().any(member_uses_none)
+        }
+        Stmt::Trait(t) => t.members.iter().any(member_uses_none),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+fn member_uses_none(member: &ClassMember) -> bool {
+    match member {
+        ClassMember::Field(f) => f.default.as_ref().is_some_and(expr_uses_none),
+        ClassMember::Method(m) => program_uses_none(&m.body),
+    }
+}
+
+fn expr_uses_none(expr: &Expr) -> bool {
+    match expr {
+        Expr::None => true,
+        Expr::Paren(e) | Expr::Unary { expr: e, .. } | Expr::Try(e) => expr_uses_none(e),
+        Expr::Index(a, b) => expr_uses_none(a) || expr_uses_none(b),
+        Expr::Field(a, _) => expr_uses_none(a),
+        Expr::Call { func, args, .. } => expr_uses_none(func) || args.iter().any(expr_uses_none),
+        Expr::Binary { left, right, .. } => expr_uses_none(left) || expr_uses_none(right),
+        Expr::OrReturn { value, fallback } => {
+            expr_uses_none(value) || fallback.as_ref().is_some_and(|f| expr_uses_none(f))
+        }
+        Expr::OrFlow { value, .. } => expr_uses_none(value),
+        Expr::Guard { value, .. } => expr_uses_none(value),
+        Expr::Table(fields) => fields.iter().any(|f| match f {
+            TableField::Positional(e) | TableField::Named(_, e) => expr_uses_none(e),
+            TableField::Computed(k, v) => expr_uses_none(k) || expr_uses_none(v),
+        }),
+        Expr::Bundle(items) => items.iter().any(expr_uses_none),
+        Expr::DoBlock { body, give } => program_uses_none(body) || expr_uses_none(give),
+        Expr::TableComp {
+            iter,
+            when_cond,
+            give,
+            ..
+        } => {
+            expr_uses_none(iter)
+                || when_cond.as_ref().is_some_and(|c| expr_uses_none(c))
+                || expr_uses_none(give)
+        }
+        Expr::Is { value, .. } => expr_uses_none(value),
+        Expr::Function { body, .. } => program_uses_none(body),
+        Expr::Conditional {
+            branches,
+            else_expr,
+        } => {
+            branches
+                .iter()
+                .any(|(c, v)| expr_uses_none(c) || expr_uses_none(v))
+                || expr_uses_none(else_expr)
+        }
+        Expr::ConstConditional {
+            expr,
+            when_clauses,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            expr_uses_none(expr)
+                || when_clauses.iter().any(|c| match c {
+                    WhenClause::Cond(c) => expr_uses_none(c),
+                    WhenClause::Bind { expr, .. } => expr_uses_none(expr),
+                })
+                || expr_uses_none(then_expr)
+                || expr_uses_none(else_expr)
+        }
+        Expr::Nil
+        | Expr::Bool(_)
+        | Expr::Number(_)
+        | Expr::Str(_)
+        | Expr::Backtick(_)
+        | Expr::Ident(_)
+        | Expr::Vararg
+        | Expr::Restructure(_) => false,
+    }
+}
+
 fn body_returns_none(body: &[Stmt]) -> bool {
     body.iter().any(|s| match s {
         Stmt::Return(exprs) => exprs.iter().any(|e| matches!(e, Expr::None)),
@@ -2114,10 +2624,11 @@ fn collect_trait_closure(
 
 fn helper_source(name: &str) -> String {
     match name {
+        "truthy" => "local function __luwu_truthy(value)\n    return value ~= nil and value ~= false and value ~= none\nend".into(),
         "isinstance" => "local function __luwu_isinstance(value, class)\n    return type(value) == \"table\" and getmetatable(value) == class\nend".into(),
         "of" => "local function __luwu_class_of(value)\n    if type(value) ~= \"table\" then\n        return nil\n    end\n    return getmetatable(value)\nend".into(),
         "name" => "local function __luwu_class_name(value)\n    if type(value) ~= \"table\" then\n        return nil\n    end\n    local cls = getmetatable(value)\n    if cls and cls.__name then\n        return cls.__name\n    end\n    return value.__name\nend".into(),
-        "fields" => "local function __luwu_fields(object)\n    local cls = type(object) == \"table\" and getmetatable(object) or nil\n    if type(object) == \"table\" and rawget(object, \"fields\") then\n        cls = object\n    elseif not (cls and cls.fields) then\n        cls = object\n    end\n    local fields = cls and cls.fields or {}\n    local result = {}\n    for i, field in ipairs(fields) do\n        result[i] = {\n            name = field.name,\n            isconst = field.isconst,\n            position = field.position,\n            value = {\n                get = function()\n                    return object[field.name]\n                end,\n            },\n        }\n    end\n    return result\nend".into(),
+        "fields" => "local function __luwu_fields(object)\n    local cls = type(object) == \"table\" and getmetatable(object) or nil\n    if type(object) == \"table\" and rawget(object, \"fields\") then\n        cls = object\n    elseif not (cls and cls.fields) then\n        cls = object\n    end\n    local declared = cls and cls.fields or {}\n    local result = {}\n    local complete = true\n    for _, field in ipairs(declared) do\n        if field.visibility == \"private\" then\n            complete = false\n        else\n            local value\n            if type(object) == \"table\" and object ~= cls then\n                value = rawget(object, field.name)\n            end\n            if value == nil then\n                value = none\n            end\n            result[field.name] = value\n        end\n    end\n    return result, complete\nend".into(),
         "member" => "local function __luwu_member(target, name)\n    local mt = type(target) == \"table\" and getmetatable(target) or nil\n    local cls\n    if type(target) == \"table\" and rawget(target, \"members\") then\n        cls = target\n    elseif mt and mt.members then\n        cls = mt\n    else\n        cls = target\n    end\n    local info = cls and cls.members and cls.members[name]\n    if not info then\n        return nil\n    end\n    local bound = cls ~= target\n    local member = {\n        name = info.name,\n        kind = info.kind,\n        isconst = info.isconst,\n        visibility = info.visibility,\n        position = info.position,\n        _target = bound and target or nil,\n        _has_value = bound,\n        _value = bound and target[name] or nil,\n    }\n    member.get = function(self, object)\n        if object then\n            return object[self.name]\n        end\n        return self._target and self._target[self.name] or nil\n    end\n    setmetatable(member, {\n        __tostring = function(self)\n            if self.kind == \"field\" then\n                if self._has_value then\n                    return string.format(\"%s const %s = %q\", self.visibility, self.name, self._value)\n                end\n                return string.format(\"%s const %s\", self.visibility, self.name)\n            end\n            return string.format(\"%s function %s\", self.visibility, self.name)\n        end,\n    })\n    return member\nend".into(),
         "implements" => "local function __luwu_implements(object, trait)\n    local cls = type(object) == \"table\" and getmetatable(object) or nil\n    return cls ~= nil and cls.__traits ~= nil and cls.__traits[trait] ~= nil\nend".into(),
         "table_drop" => "local function __luwu_table_drop(list, value)\n    local index = table.find(list, value)\n    while index ~= nil do\n        table.remove(list, index)\n        index = table.find(list, value)\n    end\nend".into(),

@@ -1,0 +1,13 @@
+@native
+local function fast(a: number): number
+    return a * 2
+end
+print(fast(21))
+
+class C
+    @native
+    public function go(self)
+        return 1
+    end
+end
+print(C():go())

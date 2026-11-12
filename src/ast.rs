@@ -7,6 +7,7 @@ pub struct Program {
 pub enum BindingKind {
     Const,
     Local,
+    Global,
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +33,7 @@ pub struct FieldDecl {
     pub visibility: Option<String>,
     pub is_const: bool,
     pub is_expect: bool,
+    pub is_static: bool,
     pub ty: Option<String>,
 }
 
@@ -64,6 +66,7 @@ pub struct TraitRef {
 pub struct ClassDecl {
     pub name: String,
     pub params: Vec<Param>,
+    #[allow(dead_code)]
     pub has_ctor_parens: bool,
     pub implements: Vec<TraitRef>,
     pub members: Vec<ClassMember>,
@@ -112,14 +115,28 @@ pub enum Stmt {
     IfBind {
         name: String,
         expr: Expr,
-        when_cond: Option<Expr>,
+        when_clauses: Vec<WhenClause>,
         then_body: Vec<Stmt>,
         else_body: Option<Vec<Stmt>>,
     },
     For {
         patterns: Vec<Pattern>,
         iter: Expr,
-        when_clause: Option<WhenClause>,
+        when_clauses: Vec<WhenClause>,
+        body: Vec<Stmt>,
+    },
+    NumericFor {
+        name: String,
+        start: Expr,
+        stop: Expr,
+        step: Option<Expr>,
+        when_clauses: Vec<WhenClause>,
+        body: Vec<Stmt>,
+    },
+    WhileBind {
+        name: String,
+        expr: Expr,
+        when_clauses: Vec<WhenClause>,
         body: Vec<Stmt>,
     },
     While {
@@ -179,7 +196,16 @@ pub enum Expr {
     },
     OrReturn {
         value: Box<Expr>,
-        fallback: Box<Expr>,
+        fallback: Option<Box<Expr>>,
+    },
+    OrFlow {
+        value: Box<Expr>,
+        action: FlowAction,
+    },
+    Guard {
+        value: Box<Expr>,
+        action: FlowAction,
+        when_truthy: bool,
     },
     Try(Box<Expr>),
     DoBlock {
@@ -202,4 +228,21 @@ pub enum Expr {
         body: Vec<Stmt>,
         return_type: Option<String>,
     },
+    Conditional {
+        branches: Vec<(Expr, Expr)>,
+        else_expr: Box<Expr>,
+    },
+    ConstConditional {
+        name: String,
+        expr: Box<Expr>,
+        when_clauses: Vec<WhenClause>,
+        then_expr: Box<Expr>,
+        else_expr: Box<Expr>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FlowAction {
+    Break,
+    Continue,
 }

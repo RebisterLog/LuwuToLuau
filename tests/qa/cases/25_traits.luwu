@@ -1,0 +1,51 @@
+trait Lootable
+    expect loot: { string }
+    function drop(self): { string }
+        const dropped = self.loot
+        self.loot = {}
+        return dropped
+    end
+end
+class Chest(loot: { string }) implements Lootable end
+class Slime(hp: number, loot: { string }) implements Lootable end
+const chest = Chest({ "gold", "map" })
+const slime = Slime(5, { "goo" })
+print(#chest:drop(), #chest:drop(), slime:drop()[1])
+
+trait Describable
+    expect const name: string
+    expect function details(self): string
+    function describe(self): string
+        return `{self.name}: {self:details()}`
+    end
+end
+class Sword implements Describable
+    const name = "Iron sword"
+    damage = 7
+    function details(self): string
+        return `deals {self.damage} damage`
+    end
+end
+print(Sword():describe())
+
+trait Shape
+    expect function area(self): number
+    final function total_area(shapes: { Shape }): number
+        local total = 0
+        for _, shape in shapes do
+            total += shape:area()
+        end
+        return total
+    end
+end
+class Rectangle(width: number, height: number) implements Shape
+    function area(self): number
+        return self.width * self.height
+    end
+end
+class Circle(radius: number) implements Shape
+    function area(self): number
+        return math.pi * self.radius ^ 2
+    end
+end
+print(math.floor(Shape.total_area({ Rectangle(2, 3), Circle(1) }) * 10000 + 0.5) / 10000)
