@@ -862,11 +862,9 @@ fn generate_post_build_artifacts(loaded: &LoadedConfig, resolved: &Resolved, ver
     if let Err(e) = sourcemap::generate_build_artifacts(&workspace, &resolved.out, verbose) {
         eprintln!("warning: cannot generate build sourcemap artifacts: {e}");
     }
-    if let Err(e) = sourcemap::generate_root_sourcemap(
-        &workspace,
-        &loaded.config.sourcemap.assets,
-        verbose,
-    ) {
+    if let Err(e) =
+        sourcemap::generate_root_sourcemap(&workspace, &loaded.config.sourcemap.assets, verbose)
+    {
         eprintln!("warning: cannot generate root sourcemap: {e}");
     }
 }
@@ -885,11 +883,17 @@ fn run_sourcemap(args: &SourcemapArgs) -> Result<(), String> {
         .unwrap_or_else(|| sourcemap::root_project_path(&workspace));
 
     if !project.is_file() {
-        return Err(format!("project file `{}` does not exist", project.display()));
+        return Err(format!(
+            "project file `{}` does not exist",
+            project.display()
+        ));
     }
 
     let (mode, default_out) = if args.build {
-        (sourcemap::Mode::Build, loaded.config.output.dir.join("sourcemap.json"))
+        (
+            sourcemap::Mode::Build,
+            loaded.config.output.dir.join("sourcemap.json"),
+        )
     } else {
         (sourcemap::Mode::Source, PathBuf::from("sourcemap.json"))
     };
@@ -956,7 +960,9 @@ fn run_sourcemap_studio(
         let text = fs::read_to_string(input)
             .map_err(|e| format!("cannot read `{}`: {e}", input.display()))?;
         #[derive(serde::Deserialize)]
-        struct Payload { tree: sourcemap::Node }
+        struct Payload {
+            tree: sourcemap::Node,
+        }
         let payload: Payload = serde_json::from_str(&text)
             .map_err(|e| format!("invalid studio payload `{}`: {e}", input.display()))?;
         if args.dry_run {
@@ -964,7 +970,11 @@ fn run_sourcemap_studio(
             println!(
                 "would write {} ({})",
                 studio_cfg.output.display(),
-                if filtered.is_some() { "filtered tree" } else { "no matching nodes" }
+                if filtered.is_some() {
+                    "filtered tree"
+                } else {
+                    "no matching nodes"
+                }
             );
             return Ok(());
         }
@@ -1022,16 +1032,70 @@ fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
     println!("output.copy_assets: {}", resolved.copy_assets);
     println!("watch.debounce_ms: {}", resolved.debounce_ms);
     println!("build.fail_on: {}", resolved.fail_on_desc);
-    println!("sourcemap.assets: {}", loaded.config.sourcemap.assets.display());
-    println!("sourcemap.studio.enabled: {}", loaded.config.sourcemap.studio.enabled);
-    println!("sourcemap.studio.port: {}", loaded.config.sourcemap.studio.port);
-    println!("sourcemap.studio.output: {}", loaded.config.sourcemap.studio.output.display());
-    println!("sourcemap.studio.filter.include: [{}]", loaded.config.sourcemap.studio.filter.include.join(", "));
-    println!("sourcemap.studio.filter.exclude: [{}]", loaded.config.sourcemap.studio.filter.exclude.join(", "));
-    println!("sourcemap.studio.filter.include_class: [{}]", loaded.config.sourcemap.studio.filter.include_class.join(", "));
-    println!("sourcemap.studio.filter.exclude_class: [{}]", loaded.config.sourcemap.studio.filter.exclude_class.join(", "));
-    println!("sourcemap.studio.filter.include_name: [{}]", loaded.config.sourcemap.studio.filter.include_name.join(", "));
-    println!("sourcemap.studio.filter.exclude_name: [{}]", loaded.config.sourcemap.studio.filter.exclude_name.join(", "));
+    println!(
+        "sourcemap.assets: {}",
+        loaded.config.sourcemap.assets.display()
+    );
+    println!(
+        "sourcemap.studio.enabled: {}",
+        loaded.config.sourcemap.studio.enabled
+    );
+    println!(
+        "sourcemap.studio.port: {}",
+        loaded.config.sourcemap.studio.port
+    );
+    println!(
+        "sourcemap.studio.output: {}",
+        loaded.config.sourcemap.studio.output.display()
+    );
+    println!(
+        "sourcemap.studio.filter.include: [{}]",
+        loaded.config.sourcemap.studio.filter.include.join(", ")
+    );
+    println!(
+        "sourcemap.studio.filter.exclude: [{}]",
+        loaded.config.sourcemap.studio.filter.exclude.join(", ")
+    );
+    println!(
+        "sourcemap.studio.filter.include_class: [{}]",
+        loaded
+            .config
+            .sourcemap
+            .studio
+            .filter
+            .include_class
+            .join(", ")
+    );
+    println!(
+        "sourcemap.studio.filter.exclude_class: [{}]",
+        loaded
+            .config
+            .sourcemap
+            .studio
+            .filter
+            .exclude_class
+            .join(", ")
+    );
+    println!(
+        "sourcemap.studio.filter.include_name: [{}]",
+        loaded
+            .config
+            .sourcemap
+            .studio
+            .filter
+            .include_name
+            .join(", ")
+    );
+    println!(
+        "sourcemap.studio.filter.exclude_name: [{}]",
+        loaded
+            .config
+            .sourcemap
+            .studio
+            .filter
+            .exclude_name
+            .join(", ")
+    );
     Ok(())
 }
 

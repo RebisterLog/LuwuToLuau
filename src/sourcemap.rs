@@ -86,7 +86,7 @@ fn build_node(name: &str, value: &Value, project_dir: &Path, mode: Mode) -> Resu
     }
 
     if class_name.is_empty() {
-        class_name = if path.is_some() { "Folder".into() } else { "Folder".into() };
+        class_name = "Folder".into();
     }
 
     Ok(Node {
@@ -104,9 +104,8 @@ fn node_from_path(
     mode: Mode,
 ) -> Result<(String, Vec<String>, Vec<Node>), String> {
     if fs_path.is_file() {
-        let (_node_name, class_name) = classify_file(name, fs_path, mode).unwrap_or_else(|| {
-            (file_stem_name(fs_path), "ModuleScript".to_string())
-        });
+        let (_node_name, class_name) = classify_file(name, fs_path, mode)
+            .unwrap_or_else(|| (file_stem_name(fs_path), "ModuleScript".to_string()));
         let rel = rel_path_string(fs_path, project_dir);
         return Ok((class_name, vec![rel], Vec::new()));
     }
@@ -231,7 +230,10 @@ fn find_init(dir: &Path, mode: Mode) -> Option<PathBuf> {
 }
 
 fn classify_file(name_hint: &str, path: &Path, mode: Mode) -> Option<(String, String)> {
-    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or(name_hint);
+    let fname = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name_hint);
     // Order matters: more specific suffixes first.
     let patterns: Vec<(&str, &str, bool)> = match mode {
         Mode::Source => vec![
@@ -357,7 +359,12 @@ fn rel_path_string(path: &Path, base: &Path) -> String {
 pub fn normalize_node(node: &mut Node) {
     node.file_paths.sort();
     node.file_paths.dedup();
-    node.children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.name.cmp(&b.name)));
+    node.children.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.name.cmp(&b.name))
+    });
     // Merge duplicate child names produced by different passes.
     let mut merged: Vec<Node> = Vec::new();
     for child in node.children.drain(..) {
@@ -376,7 +383,9 @@ pub fn normalize_node(node: &mut Node) {
 }
 
 fn merge_nodes(target: &mut Node, other: Node) {
-    if (target.class_name == "Folder" || target.class_name.is_empty()) && !other.class_name.is_empty() {
+    if (target.class_name == "Folder" || target.class_name.is_empty())
+        && !other.class_name.is_empty()
+    {
         target.class_name = other.class_name.clone();
     }
     target.file_paths.extend(other.file_paths);
@@ -394,7 +403,9 @@ pub fn merge_into(target: &mut Node, other: Node) {
     if target.name.is_empty() {
         target.name = other.name.clone();
     }
-    if (target.class_name.is_empty() || target.class_name == "Folder") && !other.class_name.is_empty() {
+    if (target.class_name.is_empty() || target.class_name == "Folder")
+        && !other.class_name.is_empty()
+    {
         target.class_name = other.class_name;
     }
     for fp in other.file_paths {
@@ -421,15 +432,13 @@ pub fn write_json(path: &Path, node: &Node) -> Result<(), String> {
     }
     let json = serde_json::to_string_pretty(node)
         .map_err(|e| format!("cannot serialize sourcemap: {e}"))?;
-    fs::write(path, json + "\n")
-        .map_err(|e| format!("cannot write `{}`: {e}", path.display()))
+    fs::write(path, json + "\n").map_err(|e| format!("cannot write `{}`: {e}", path.display()))
 }
 
 pub fn read_sourcemap(path: &Path) -> Result<Node, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
-    serde_json::from_str(&text)
-        .map_err(|e| format!("invalid sourcemap `{}`: {e}", path.display()))
+    let text =
+        fs::read_to_string(path).map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("invalid sourcemap `{}`: {e}", path.display()))
 }
 
 /// Resolve the project root directory for outputs. Prefer the directory that
@@ -469,14 +478,19 @@ pub fn generate_build_project(
     }
     let json = serde_json::to_string_pretty(&project)
         .map_err(|e| format!("cannot serialize build project: {e}"))?;
-    fs::write(&out, json + "\n")
-        .map_err(|e| format!("cannot write `{}`: {e}", out.display()))?;
+    fs::write(&out, json + "\n").map_err(|e| format!("cannot write `{}`: {e}", out.display()))?;
     Ok(out)
 }
 
 fn rewrite_tree_paths(value: &mut Value) {
-    let Some(obj) = value.as_object_mut() else { return };
-    if let Some(p) = obj.get("$path").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    if let Some(p) = obj
+        .get("$path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+    {
         let rewritten = rewrite_path(&p);
         obj.insert("$path".to_string(), Value::String(rewritten));
     }
@@ -506,7 +520,11 @@ fn rewrite_path(p: &str) -> String {
 
 /// Generate root sourcemap.json (for luwu-lsp) from root default.project.json
 /// and merge manual assets sourcemap from config if present.
-pub fn generate_root_sourcemap(workspace: &Path, assets_rel: &Path, verbose: bool) -> Result<Option<PathBuf>, String> {
+pub fn generate_root_sourcemap(
+    workspace: &Path,
+    assets_rel: &Path,
+    verbose: bool,
+) -> Result<Option<PathBuf>, String> {
     let project = root_project_path(workspace);
     if !project.is_file() {
         return Ok(None);
@@ -542,14 +560,20 @@ pub fn generate_build_artifacts(
     let source_project = root_project_path(workspace);
     if !source_project.is_file() {
         if verbose {
-            eprintln!("warning: no default.project.json in workspace, skipping build sourcemap artifacts");
+            eprintln!(
+                "warning: no default.project.json in workspace, skipping build sourcemap artifacts"
+            );
         }
         return Ok(());
     }
     let name = fs::read_to_string(&source_project)
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+        .and_then(|v| {
+            v.get("name")
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| "game".to_string());
     let build_project = generate_build_project(&source_project, out_dir, &name)?;
     let mut node = generate_from_project(&build_project, Mode::Build)?;
@@ -557,7 +581,11 @@ pub fn generate_build_artifacts(
     let out = out_dir.join("sourcemap.json");
     write_json(&out, &node)?;
     if verbose {
-        eprintln!("generated {} and {}", build_project.display(), out.display());
+        eprintln!(
+            "generated {} and {}",
+            build_project.display(),
+            out.display()
+        );
     }
     Ok(())
 }
@@ -683,14 +711,19 @@ fn path_is_under(path: &str, prefix: &str) -> bool {
         && path.as_bytes().get(prefix.len()) == Some(&b'.')
 }
 
-fn node_values_allowed(name: &str, class_name: &str, filter: &crate::config::StudioFilterConfig) -> bool {
+fn node_values_allowed(
+    name: &str,
+    class_name: &str,
+    filter: &crate::config::StudioFilterConfig,
+) -> bool {
     if !filter.include_class.is_empty() && !filter.include_class.iter().any(|c| c == class_name) {
         return false;
     }
     if filter.exclude_class.iter().any(|c| c == class_name) {
         return false;
     }
-    if !filter.include_name.is_empty() && !filter.include_name.iter().any(|n| name_matches(name, n)) {
+    if !filter.include_name.is_empty() && !filter.include_name.iter().any(|n| name_matches(name, n))
+    {
         return false;
     }
     if filter.exclude_name.iter().any(|n| name_matches(name, n)) {
@@ -766,7 +799,10 @@ pub fn apply_studio_tree(
             let _ = fs::remove_file(&out_path);
         }
         if verbose {
-            eprintln!("studio sourcemap filter produced no nodes; cleared {}", out_path.display());
+            eprintln!(
+                "studio sourcemap filter produced no nodes; cleared {}",
+                out_path.display()
+            );
         }
     }
 
@@ -804,4 +840,3 @@ pub fn clear_studio_sourcemap(
     }
     Ok(())
 }
-
