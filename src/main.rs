@@ -5,6 +5,8 @@ mod lexer;
 mod lower;
 mod luau;
 mod parser;
+mod sourcemap;
+mod studio;
 mod validate;
 
 use std::fs;
@@ -43,6 +45,9 @@ enum Command {
 
     /// Rebuild whenever a source file changes
     Watch(WatchArgs),
+
+    /// Generate a Rojo-compatible sourcemap.json
+    Sourcemap(SourcemapArgs),
 
     /// Create a `luwu.toml` configuration file and a project skeleton
     Init(InitArgs),
@@ -115,6 +120,69 @@ struct WatchArgs {
     /// Debounce delay in milliseconds (overrides `watch.debounce_ms`)
     #[arg(long, value_name = "MS")]
     debounce: Option<u64>,
+
+    /// Regenerate sourcemap artifacts (root sourcemap.json and build outputs)
+    #[arg(long)]
+    generate_sourcemap: bool,
+
+    /// Listen for Roblox Studio companion plugin updates and write a filtered sourcemap
+    #[arg(long = "studio-sourcemap")]
+    studio_sourcemap: bool,
+
+    /// Port for the Studio companion plugin listener (overrides config)
+    #[arg(long = "studio-port", value_name = "PORT")]
+    studio_port: Option<u16>,
+}
+
+#[derive(Args, Clone)]
+struct SourcemapArgs {
+    /// Rojo project file to generate from (defaults to default.project.json)
+    #[arg(value_name = "PROJECT")]
+    project: Option<PathBuf>,
+
+    /// Output file path
+    #[arg(short, long, value_name = "FILE")]
+    out: Option<PathBuf>,
+
+    /// Path to the configuration file
+    #[arg(short = 'c', long = "config", value_name = "FILE")]
+    config: Option<PathBuf>,
+
+    /// Ignore `luwu.toml` completely
+    #[arg(long)]
+    no_config: bool,
+
+    /// Generate a build-mode sourcemap (no .luwu) instead of a source-mode one
+    #[arg(long)]
+    build: bool,
+
+    /// Listen for Roblox Studio companion plugin updates and write a filtered sourcemap
+    #[arg(long)]
+    studio: bool,
+
+    /// Accept a single Studio payload and exit (requires --studio)
+    #[arg(long, requires = "studio")]
+    once: bool,
+
+    /// Port for the Studio companion plugin listener (overrides config)
+    #[arg(long = "studio-port", value_name = "PORT")]
+    studio_port: Option<u16>,
+
+    /// Apply a saved Studio payload JSON file ({"tree": ...}) instead of listening
+    #[arg(long = "studio-input", value_name = "FILE")]
+    studio_input: Option<PathBuf>,
+
+    /// Show what would be done without touching the file system
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Print more
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Print less
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 #[derive(Args)]
@@ -232,6 +300,7 @@ fn main() {
         Command::Build(args) => run_build(&args, false),
         Command::Check(args) => run_build(&args, true),
         Command::Watch(args) => run_watch(&args),
+        Command::Sourcemap(args) => run_sourcemap(&args),
         Command::Init(args) => run_init(&args),
         Command::New(args) => run_new(&args),
         Command::Clean(args) => run_clean(&args),
@@ -476,6 +545,10 @@ fn run_build(args: &CommonArgs, check_only: bool) -> Result<(), String> {
         }
     }
 
+    if !check_only && !args.dry_run {
+        generate_post_build_artifacts(&loaded, &resolved, args.verbose);
+    }
+
     if !args.quiet {
         let compiled = built.len();
         match (check_only, args.dry_run) {
@@ -511,6 +584,26 @@ fn run_watch(args: &WatchArgs) -> Result<(), String> {
         fail_on,
     )?;
 
+    let mut studio_cfg = loaded.config.sourcemap.studio.clone();
+    if args.studio_sourcemap {
+        studio_cfg.enabled = true;
+    }
+    if let Some(port) = args.studio_port {
+        studio_cfg.port = port;
+        studio_cfg.enabled = true;
+    }
+    if studio_cfg.enabled {
+        let workspace = sourcemap::workspace_root(loaded.path.as_deref());
+        let ctx = studio::StudioContext {
+            workspace,
+            studio: studio_cfg,
+            assets_rel: loaded.config.sourcemap.assets.clone(),
+            verbose: args.common.verbose,
+            quiet: args.common.quiet,
+        };
+        studio::spawn_background(ctx);
+    }
+
     println!(
         "watching {} (Ctrl+C to stop)",
         resolved
@@ -534,8 +627,22 @@ fn run_watch(args: &WatchArgs) -> Result<(), String> {
 
         if now != last {
             last = now;
-            if let Err(e) = run_build(&args.common, false) {
-                eprintln!("error: {e}");
+            match run_build(&args.common, false) {
+                Ok(()) => {
+                    if args.generate_sourcemap {
+                        // run_build already generates artifacts after a successful build;
+                        // regenerate root sourcemap explicitly to reflect current state.
+                        let workspace = sourcemap::workspace_root(loaded.path.as_deref());
+                        if let Err(e) = sourcemap::generate_root_sourcemap(
+                            &workspace,
+                            &loaded.config.sourcemap.assets,
+                            args.common.verbose,
+                        ) {
+                            eprintln!("error: sourcemap: {e}");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("error: {e}"),
             }
         }
 
@@ -544,7 +651,7 @@ fn run_watch(args: &WatchArgs) -> Result<(), String> {
 }
 
 /// Creates the skeleton of a project: the configuration, the source folder
-/// and, optionally, a Rojo project that already points at `build/`.
+/// and, optionally, a source-oriented Rojo project for Luwu/LSP.
 fn scaffold(dir: &Path, rojo: bool, force: bool, name: Option<&str>) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("cannot create `{}`: {e}", dir.display()))?;
 
@@ -557,7 +664,7 @@ fn scaffold(dir: &Path, rojo: bool, force: bool, name: Option<&str>) -> Result<(
     } else {
         fs::write(&config_path, config::default_config_text())
             .map_err(|e| format!("cannot write `{}`: {e}", config_path.display()))?;
-        created.push(config_path);
+        created.push(config_path.clone());
     }
 
     // The source folder.
@@ -568,6 +675,15 @@ fn scaffold(dir: &Path, rojo: bool, force: bool, name: Option<&str>) -> Result<(
     }
 
     // Starter sources.
+    let project_name = name
+        .map(|n| n.to_string())
+        .or_else(|| {
+            dir.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_string())
+        })
+        .unwrap_or_else(|| "MyGame".to_string());
+
     if rojo {
         let shared = src.join("shared");
         let server = src.join("server");
@@ -589,33 +705,36 @@ fn scaffold(dir: &Path, rojo: bool, force: bool, name: Option<&str>) -> Result<(
             write_new(&path, content, force, &mut created)?;
         }
 
-        let project_name = name
-            .map(|n| n.to_string())
-            .or_else(|| {
-                dir.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.to_string())
-            })
-            .unwrap_or_else(|| "MyGame".to_string());
-
+        // Source-oriented project for luwu-lsp and root sourcemap generation.
         let project_path = dir.join("default.project.json");
         let project = format!(
             "{{\n  \"name\": {},\n  \"tree\": {{\n    \"$className\": \"DataModel\",\n\n    \
-             \"ReplicatedStorage\": {{\n      \"Shared\": {{\n        \"$path\": \"build/shared\"\n      }}\n    }},\n\n    \
-             \"ServerScriptService\": {{\n      \"Server\": {{\n        \"$path\": \"build/server\"\n      }}\n    }},\n\n    \
-             \"StarterPlayer\": {{\n      \"StarterPlayerScripts\": {{\n        \"Client\": {{\n          \"$path\": \"build/client\"\n        }}\n      }}\n    }}\n  }}\n}}\n",
+             \"ReplicatedStorage\": {{\n      \"Shared\": {{\n        \"$path\": \"src/shared\"\n      }}\n    }},\n\n    \
+             \"ServerScriptService\": {{\n      \"Server\": {{\n        \"$path\": \"src/server\"\n      }}\n    }},\n\n    \
+             \"StarterPlayer\": {{\n      \"StarterPlayerScripts\": {{\n        \"Client\": {{\n          \"$path\": \"src/client\"\n        }}\n      }}\n    }}\n  }}\n}}\n",
             json_string(&project_name)
         );
         write_new(&project_path, &project, force, &mut created)?;
+
+        // Initial root sourcemap for luwu-lsp (merged with manual assets sourcemap if present).
+        let cfg = config::load(Some(&config_path), false, dir)
+            .map(|l| l.config)
+            .unwrap_or_default();
+        if let Err(e) = sourcemap::generate_root_sourcemap(dir, &cfg.sourcemap.assets, false) {
+            eprintln!("warning: cannot generate root sourcemap: {e}");
+        } else if dir.join("sourcemap.json").exists() {
+            println!("created {}", dir.join("sourcemap.json").display());
+        }
     } else {
         let main = src.join("main.luwu");
         write_new(&main, SAMPLE_MAIN, force, &mut created)?;
     }
 
-    // A .gitignore that keeps the generated Luau out of the repository.
+    // .gitignore: keep generated build output and generated root sourcemap out of the repo.
+    // The manual assets sourcemap (sourcemap.assets.json by default) is not ignored.
     let gitignore = dir.join(".gitignore");
     if !gitignore.exists() {
-        fs::write(&gitignore, "# Generated Luau\n/build\n")
+        fs::write(&gitignore, "# Generated\n/build\n/sourcemap.json\n")
             .map_err(|e| format!("cannot write `{}`: {e}", gitignore.display()))?;
         created.push(gitignore);
     }
@@ -675,9 +794,10 @@ fn run_init(args: &InitArgs) -> Result<(), String> {
 
     println!();
     println!("next steps:");
-    println!("  luwu build        # compile the Luwu sources");
+    println!("  luwu build                  # compile sources and generate build artifacts");
     if args.rojo {
-        println!("  rojo build -o out.rbxl");
+        println!("  luwu watch --generate-sourcemap");
+        println!("  rojo build build/default.project.json -o out.rbxl");
     }
     Ok(())
 }
@@ -707,9 +827,10 @@ fn run_new(args: &NewArgs) -> Result<(), String> {
     println!();
     println!("next steps:");
     println!("  cd {}", args.name);
-    println!("  luwu build");
+    println!("  luwu build                  # compile sources and generate build artifacts");
     if args.rojo {
-        println!("  rojo build -o out.rbxl");
+        println!("  luwu watch --generate-sourcemap");
+        println!("  rojo build build/default.project.json -o out.rbxl");
     }
     Ok(())
 }
@@ -734,6 +855,143 @@ fn run_clean(args: &CleanArgs) -> Result<(), String> {
     remove_output_dir(&out)?;
     println!("removed {}", out.display());
     Ok(())
+}
+
+fn generate_post_build_artifacts(loaded: &LoadedConfig, resolved: &Resolved, verbose: bool) {
+    let workspace = sourcemap::workspace_root(loaded.path.as_deref());
+    if let Err(e) = sourcemap::generate_build_artifacts(&workspace, &resolved.out, verbose) {
+        eprintln!("warning: cannot generate build sourcemap artifacts: {e}");
+    }
+    if let Err(e) = sourcemap::generate_root_sourcemap(
+        &workspace,
+        &loaded.config.sourcemap.assets,
+        verbose,
+    ) {
+        eprintln!("warning: cannot generate root sourcemap: {e}");
+    }
+}
+
+fn run_sourcemap(args: &SourcemapArgs) -> Result<(), String> {
+    let loaded = load_config(args.config.as_deref(), args.no_config).map_err(|e| e.to_string())?;
+    let workspace = sourcemap::workspace_root(loaded.path.as_deref());
+
+    if args.studio || args.studio_input.is_some() {
+        return run_sourcemap_studio(args, &loaded, &workspace);
+    }
+
+    let project = args
+        .project
+        .clone()
+        .unwrap_or_else(|| sourcemap::root_project_path(&workspace));
+
+    if !project.is_file() {
+        return Err(format!("project file `{}` does not exist", project.display()));
+    }
+
+    let (mode, default_out) = if args.build {
+        (sourcemap::Mode::Build, loaded.config.output.dir.join("sourcemap.json"))
+    } else {
+        (sourcemap::Mode::Source, PathBuf::from("sourcemap.json"))
+    };
+    let out = args.out.clone().unwrap_or(default_out);
+
+    let mut node = sourcemap::generate_from_project(&project, mode)?;
+    if !args.build {
+        let assets_path = if loaded.config.sourcemap.assets.is_absolute() {
+            loaded.config.sourcemap.assets.clone()
+        } else {
+            workspace.join(&loaded.config.sourcemap.assets)
+        };
+        if assets_path.is_file() {
+            if let Ok(assets) = sourcemap::read_sourcemap(&assets_path) {
+                sourcemap::merge_into(&mut node, assets);
+            }
+        }
+    }
+    sourcemap::normalize_node(&mut node);
+    let out_path = if out.is_absolute() {
+        out
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| workspace.clone())
+            .join(out)
+    };
+
+    if args.dry_run {
+        println!("would write {}", out_path.display());
+        return Ok(());
+    }
+
+    sourcemap::write_json(&out_path, &node)?;
+    if !args.quiet {
+        println!("wrote {}", out_path.display());
+    }
+    Ok(())
+}
+
+fn run_sourcemap_studio(
+    args: &SourcemapArgs,
+    loaded: &LoadedConfig,
+    workspace: &Path,
+) -> Result<(), String> {
+    let mut studio_cfg = loaded.config.sourcemap.studio.clone();
+    studio_cfg.enabled = true;
+    if let Some(port) = args.studio_port {
+        studio_cfg.port = port;
+    }
+    if let Some(out) = &args.out {
+        studio_cfg.output = out.clone();
+    }
+
+    if args.dry_run && args.studio_input.is_none() {
+        println!(
+            "would listen on http://127.0.0.1:{} and write {}",
+            studio_cfg.port,
+            studio_cfg.output.display()
+        );
+        return Ok(());
+    }
+
+    if let Some(input) = &args.studio_input {
+        let text = fs::read_to_string(input)
+            .map_err(|e| format!("cannot read `{}`: {e}", input.display()))?;
+        #[derive(serde::Deserialize)]
+        struct Payload { tree: sourcemap::Node }
+        let payload: Payload = serde_json::from_str(&text)
+            .map_err(|e| format!("invalid studio payload `{}`: {e}", input.display()))?;
+        if args.dry_run {
+            let filtered = sourcemap::filter_studio_tree(payload.tree, &studio_cfg.filter);
+            println!(
+                "would write {} ({})",
+                studio_cfg.output.display(),
+                if filtered.is_some() { "filtered tree" } else { "no matching nodes" }
+            );
+            return Ok(());
+        }
+        let out = sourcemap::apply_studio_tree(
+            payload.tree,
+            workspace,
+            &studio_cfg,
+            &loaded.config.sourcemap.assets,
+            args.verbose,
+        )?;
+        if !args.quiet {
+            match out {
+                Some(p) => println!("wrote {}", p.display()),
+                None => println!("no matching nodes for studio sourcemap"),
+            }
+        }
+        return Ok(());
+    }
+
+    let ctx = studio::StudioContext {
+        workspace: workspace.to_path_buf(),
+        studio: studio_cfg,
+        assets_rel: loaded.config.sourcemap.assets.clone(),
+        verbose: args.verbose,
+        quiet: args.quiet,
+    };
+    studio::serve(ctx, args.once)
 }
 
 fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
@@ -764,6 +1022,16 @@ fn run_print_config(args: &PrintConfigArgs) -> Result<(), String> {
     println!("output.copy_assets: {}", resolved.copy_assets);
     println!("watch.debounce_ms: {}", resolved.debounce_ms);
     println!("build.fail_on: {}", resolved.fail_on_desc);
+    println!("sourcemap.assets: {}", loaded.config.sourcemap.assets.display());
+    println!("sourcemap.studio.enabled: {}", loaded.config.sourcemap.studio.enabled);
+    println!("sourcemap.studio.port: {}", loaded.config.sourcemap.studio.port);
+    println!("sourcemap.studio.output: {}", loaded.config.sourcemap.studio.output.display());
+    println!("sourcemap.studio.filter.include: [{}]", loaded.config.sourcemap.studio.filter.include.join(", "));
+    println!("sourcemap.studio.filter.exclude: [{}]", loaded.config.sourcemap.studio.filter.exclude.join(", "));
+    println!("sourcemap.studio.filter.include_class: [{}]", loaded.config.sourcemap.studio.filter.include_class.join(", "));
+    println!("sourcemap.studio.filter.exclude_class: [{}]", loaded.config.sourcemap.studio.filter.exclude_class.join(", "));
+    println!("sourcemap.studio.filter.include_name: [{}]", loaded.config.sourcemap.studio.filter.include_name.join(", "));
+    println!("sourcemap.studio.filter.exclude_name: [{}]", loaded.config.sourcemap.studio.filter.exclude_name.join(", "));
     Ok(())
 }
 
@@ -1265,15 +1533,25 @@ print(class.fields(Robot()), class.member(Robot, "hello").kind)
             "client stub"
         );
         assert!(root.join("default.project.json").exists(), "rojo project");
+        assert!(root.join("sourcemap.json").exists(), "root sourcemap");
 
         let project = fs::read_to_string(root.join("default.project.json")).unwrap();
         assert!(project.contains("\"name\": \"Demo\""));
-        assert!(project.contains("build/shared"));
+        assert!(project.contains("src/shared"));
+        assert!(!project.contains("build/shared"));
+
+        let gitignore = fs::read_to_string(root.join(".gitignore")).unwrap();
+        assert!(gitignore.contains("/sourcemap.json"));
+        assert!(!gitignore.contains("sourcemap.assets.json"));
 
         // The generated config is valid and points at the sources.
         let loaded = config::load(Some(&root.join("luwu.toml")), false, &root).unwrap();
         assert_eq!(loaded.config.input.paths, vec![PathBuf::from("src")]);
         assert!(loaded.config.output.copy_assets);
+        assert_eq!(
+            loaded.config.sourcemap.assets,
+            std::path::PathBuf::from("sourcemap.assets.json")
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -1389,6 +1667,7 @@ end
                 },
                 watch: config::WatchConfig { debounce_ms: 250 },
                 build: config::BuildConfig::default(),
+                sourcemap: config::SourcemapConfig::default(),
             },
             path: Some(PathBuf::from("luwu.toml")),
         };
