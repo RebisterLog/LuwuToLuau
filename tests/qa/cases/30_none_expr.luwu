@@ -1,4 +1,5 @@
-const function maybe(): number?
+--!nolint LuaAndOr
+const function maybe(): number | none
     return none
 end
 const a = maybe()

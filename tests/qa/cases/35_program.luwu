@@ -15,16 +15,16 @@ trait Lootable
     end
 end
 
-class Monster(name: string, hp: number, loot: { string }) implements Describable, Lootable
-    function details(self): string
+class Monster(public const name: string, public hp: number, public loot: { string }) implements Describable, Lootable
+    public function details(self): string
         return `{self.hp} hp`
     end
-    function __tostring(self): string
+    public function __tostring(self): string
         return self.name
     end
 end
 
-class Chest(loot: { string }) implements Lootable end
+class Chest(public loot: { string }) implements Lootable end
 
 const monsters = {
     Monster("Slime", 5, { "goo", "jelly" }),
@@ -33,7 +33,7 @@ const monsters = {
 }
 const chest = Chest({ "map", "coin" })
 
-const function summary(things)
+const function summary(things: { read Lootable })
     const names = { for _, t in things give tostring(t) }
     const loot_count = do
         local total = 0
@@ -41,25 +41,12 @@ const function summary(things)
             total += #t:drop()
         end
         give total
-    end
     return table.concat(names, ", "), loot_count
 end
 
 print(summary(monsters))
 print(#chest:drop(), #chest:drop())
 print(monsters[1]:describe())
-
-const function parse_number(text: string): number
-    return tonumber(text) or error(`bad {text}`, 2)
-end
-for _, text in { "1", "nope", "3" } do
-    const result = try parse_number(text)
-    if result is Ok.(value) then
-        print(`ok {value}`)
-    else
-        print("error")
-    end
-end
 
 const levels = { for _, m in monsters when m.hp > 5 give m.name }
 print(table.concat(levels, ","))
@@ -70,5 +57,4 @@ const total_hp = do
         sum += m.hp
     end
     give sum
-end
 print(total_hp)

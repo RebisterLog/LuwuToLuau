@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $cases = Join-Path $PSScriptRoot "cases"
+$experimental = Join-Path $PSScriptRoot "experimental"
 $outRoot = Join-Path $PSScriptRoot ".out"
 $buildRoot = Join-Path $PSScriptRoot ".build"
 
@@ -34,14 +35,17 @@ if (-not $Luau) {
 }
 
 New-Item -ItemType Directory -Force -Path $outRoot, $buildRoot | Out-Null
-$files = Get-ChildItem (Join-Path $cases "*.luwu")
+$files = @(Get-ChildItem (Join-Path $cases "*.luwu"))
+if (Test-Path $experimental) {
+    $files += @(Get-ChildItem (Join-Path $experimental "*.luwu.txt"))
+}
 if ($Filter) {
-    $files = $files | Where-Object { $_.BaseName -like "*$Filter*" }
+    $files = $files | Where-Object { $_.Name -like "*$Filter*" }
 }
 
 $failures = 0
 foreach ($file in $files) {
-    $name = $file.BaseName
+    $name = $file.Name -replace '\.luwu(\.txt)?$', ''
     $outDir = Join-Path $outRoot $name
     $buildDir = Join-Path $buildRoot $name
     Remove-Item -Recurse -Force $outDir, $buildDir -ErrorAction SilentlyContinue

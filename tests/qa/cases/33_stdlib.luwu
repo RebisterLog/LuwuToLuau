@@ -19,7 +19,7 @@ const players = {
     { name = "Grace", score = 95 },
     { name = "Alan", score = 88 },
 }
-table.sort(players, function(a, b)
+table.sort(players, function(a: { name: string, score: number }, b: { name: string, score: number }): boolean
     return a.score > b.score
 end)
 print(players[1].name, players[3].name)

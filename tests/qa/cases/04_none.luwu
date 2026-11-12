@@ -1,3 +1,4 @@
+--!nolint NilNoneComparison
 print("testing none")
 print((not none) == true)
 if none then
@@ -22,7 +23,7 @@ print(k[none])
 k[none] = nil
 print(k[none])
 
-const function find(items: { number }, wanted: number): number?
+const function find(items: { number }, wanted: number): number | none
     for _, item in items do
         if item == wanted then
             return item

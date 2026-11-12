@@ -1,0 +1,4 @@
+const function identity<T>(value: T): T
+    return value
+end
+print(identity::<number>(42))

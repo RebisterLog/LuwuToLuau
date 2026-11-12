@@ -1,11 +1,13 @@
+--!nolint MisleadingAndOr
+--!nolint ComparisonPrecedence
 print(7 // 2)
 print(7 % 3)
-print(1 << 4)
-print(16 >> 2)
-print(7 & 3)
-print(7 | 8)
-print(7 ~ 3)
-print(~0)
+print(bit32.lshift(1, 4))
+print(bit32.rshift(16, 2))
+print(bit32.band(7, 3))
+print(bit32.bor(7, 8))
+print(bit32.bxor(7, 3))
+print(bit32.bnot(0))
 
 const t = { 1, 2, 3 }
 print(#t)

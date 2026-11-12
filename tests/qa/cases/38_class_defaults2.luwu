@@ -1,7 +1,7 @@
 class Widget
     const id = 1
     label: string
-    function __init(self, label)
+    function __init(self, label: string)
         self.label = label
     end
 end
@@ -11,7 +11,7 @@ print(w.id, w.label)
 class PodPoint
     x = 0
     y = 0
-    label: string
+    label: string = ""
 end
 print(PodPoint().x, PodPoint().y, PodPoint { x = 5, label = "hi" }.x)
 

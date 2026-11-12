@@ -12,7 +12,7 @@ end
 
 const mixed = { 1, 2, name = "x" }
 local count = 0
-for k in mixed do
+for _k in mixed do
     count += 1
 end
 print(count)

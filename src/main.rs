@@ -1953,17 +1953,20 @@ print(.5, text)
 
     #[test]
     fn qa_fixtures_compile() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/qa/cases");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/qa");
         let mut count = 0usize;
-        for entry in fs::read_dir(&dir).expect("qa fixture directory") {
-            let path = entry.expect("fixture entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("luwu") {
-                continue;
+        for dir in [root.join("cases"), root.join("experimental")] {
+            for entry in fs::read_dir(&dir).expect("qa fixture directory") {
+                let path = entry.expect("fixture entry").path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !(name.ends_with(".luwu") || name.ends_with(".luwu.txt")) {
+                    continue;
+                }
+                let source = fs::read_to_string(&path).expect("read fixture");
+                compile(&source);
+                count += 1;
             }
-            let source = fs::read_to_string(&path).expect("read fixture");
-            compile(&source);
-            count += 1;
         }
-        assert!(count > 0, "no QA fixtures found in {}", dir.display());
+        assert!(count > 0, "no QA fixtures found in {}", root.display());
     }
 }

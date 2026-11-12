@@ -1,4 +1,4 @@
-const components: { [class]: true? } = {}
+const components: { [any]: true? } = {}
 
 trait Component
     expect function tag(): string

@@ -141,6 +141,31 @@ impl Parser {
         if self.eat_word("export") {
             // `export` marks module bindings; the Luau output keeps the binding
             // itself and lets the module system decide visibility.
+            // `export NAME: Type = value` is an exported const binding.
+            if let Tok::Word(name) = self.peek(0) {
+                if !matches!(
+                    name.as_str(),
+                    "const" | "local" | "function" | "type" | "class" | "trait" | "export"
+                ) {
+                    let name = self.expect_name()?;
+                    let ty = if self.eat_sym(":") {
+                        self.skip_type()
+                    } else {
+                        None
+                    };
+                    let exprs = if self.eat_sym("=") {
+                        self.parse_expr_list()?
+                    } else {
+                        Vec::new()
+                    };
+                    return Ok(Stmt::Decl {
+                        kind: BindingKind::Const,
+                        patterns: vec![Pattern::Name(name)],
+                        exprs,
+                        ty,
+                    });
+                }
+            }
             return self.parse_stmt();
         }
         if self.at_word("class") && matches!(self.peek(1), Tok::Word(_)) {

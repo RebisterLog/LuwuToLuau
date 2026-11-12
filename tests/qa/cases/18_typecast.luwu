@@ -1,5 +1,5 @@
 const n = 5
-const s = n :: any
+const s = n :: unknown
 print(s)
 const t = ({ 1, 2, 3 } :: { number })
 print(#t)

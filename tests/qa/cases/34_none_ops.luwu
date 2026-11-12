@@ -1,4 +1,5 @@
-const function maybe(flag: boolean): number?
+--!nolint LuaAndOr
+const function maybe(flag: boolean): number | none
     if flag then
         return none
     end
@@ -22,7 +23,7 @@ print(clamp_zero(nil))
 print(clamp_zero(0))
 
 const function guard_false(flag: boolean): string
-    const value = flag or return "false guard"
+    const _value = flag or return "false guard"
     return "kept"
 end
 print(guard_false(false))

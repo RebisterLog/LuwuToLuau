@@ -25,11 +25,12 @@ class OnlyTrait implements HasItems end
 print(OnlyTrait():total())
 print(OnlyTrait { items = { 3, 4, 5 } }:total())
 
-const function takes(reg: Registry, nested: Nested<number>): number
+const function takes(_reg: Registry, nested: Nested<number>): number
     return nested.value
 end
 print(takes({}, { value = 4 }))
 
-type Deep = Map<string, List<Map<number, string>>>
+type Pair<A, B> = { first: A, second: B }
+type Deep = Pair<string, Pair<number, Pair<string, boolean>>>
 local deep: Deep? = nil
 print(deep == nil)

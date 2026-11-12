@@ -1,14 +1,17 @@
 class Config
-    static version = 3
-    static function make()
-        return Config(Config.version)
+    v: number
+    function version(): number
+        return 3
     end
-    function __init(self, v)
+    function make()
+        return Config(Config.version())
+    end
+    function __init(self, v: number)
         self.v = v
     end
-    function show(self)
+    function show(self): number
         return self.v
     end
 end
-print(Config.version)
+print(Config.version())
 print(Config.make():show())

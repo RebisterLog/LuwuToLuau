@@ -36,10 +36,9 @@ const total = do
         sum += i
     end
     give sum
-end
 print(total)
 
-const function first_even(numbers: { number }): number?
+const function first_even(numbers: { number }): number | none
     for _, n in numbers when n % 2 == 0 do
         return n
     end
@@ -48,7 +47,7 @@ end
 const found = first_even({ 1, 2, 3, 4 })
 print(found)
 
-const function first_long(numbers: { number }): number?
+const function first_long(numbers: { number }): number | none
     for _, n in numbers when const doubled = n * 2 when doubled > 5 do
         return n
     end
@@ -74,7 +73,6 @@ const host = do
         give player.name
     end
     give "nobody"
-end
 print(host)
 
 const inventory = {

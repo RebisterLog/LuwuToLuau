@@ -15,6 +15,18 @@ The runner transpiles each case into `tests/qa/.out`, executes the result and
 prints its output. It fails when a fixture does not transpile or when the
 generated Luau exits with a non-zero status.
 
+## Experimental fixtures
+
+`tests/qa/experimental/*.luwu.txt` hold constructs that the current `luwu-lsp`
+cannot type-check yet: `try` expressions, bitwise operators, `static` fields and
+explicit generic instantiation. They are still compiled by `cargo test` and run
+by `run.ps1`, but they use a `.luwu.txt` suffix so the editor does not report
+false diagnostics for them.
+
+`39_patterns.luwu` uses the experimental `.(...)` collection patterns. Enable
+`DebugLuwuCollections` in the language server settings (the Zed settings in this
+repository already do) or the editor will report them as disabled features.
+
 ## Known limitations
 
 The transpiler targets plain Luau. A few Luwu features cannot be reproduced

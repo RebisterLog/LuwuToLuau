@@ -80,7 +80,7 @@ print(hp)
 
 class Circle(radius: number) end
 class Square(side: number) end
-const function area(shape)
+const function area(shape: Circle | Square): number
     if class.isinstance(shape, Circle) then
         return math.pi * shape.radius ^ 2
     end

@@ -10,7 +10,7 @@ else
 end
 
 if const x = 0 then
-    print("zero truthy")
+    print("zero truthy", x)
 else
     print("zero falsy")
 end
@@ -20,7 +20,7 @@ while const job = table.remove(jobs, 1) when job ~= 3 do
     print(job)
 end
 
-const function maybe(flag: boolean): number?
+const function maybe(flag: boolean): number | none
     if flag then
         return none
     end
@@ -32,7 +32,6 @@ const function guarded(flag: boolean): string
         const inner = maybe(flag) or return "early"
         print("after guard")
         give inner
-    end
     return `value {value}`
 end
 print(guarded(false))

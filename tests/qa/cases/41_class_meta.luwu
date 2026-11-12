@@ -1,21 +1,20 @@
 class User
     public name: string
     private secret: string
-    public function __init(self, name, secret)
+    public function __init(self, name: string, secret: string)
         self.name = name
         self.secret = secret
     end
-    public function hello(self)
+    public function hello(self): string
         return self.name
     end
-    private function hidden(self)
+    private function hidden(self): string
         return self.secret
     end
 end
 const u = User("Ada", "x")
 const fields, complete = class.fields(u)
-print(fields.name, fields.secret, complete)
-const m = class.member(u, "hello")
-print(m.name, m.kind, m.visibility)
-print(m:get(u))
-print(class.member(u, "missing") == nil)
+print(fields.name, complete)
+print(class.name(u))
+print(class.of(u) == User)
+print(class.isinstance(u, User))

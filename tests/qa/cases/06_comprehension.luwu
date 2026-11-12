@@ -5,7 +5,7 @@ print(table.concat(doubled, ","))
 const evens = { for _, n in numbers when n % 2 == 0 give n }
 print(table.concat(evens, ","))
 
-const map = { a = 1, b = 2, c = 3 }
+const map: { [string]: number } = { a = 1, b = 2, c = 3 }
 const keys = { for k, v in map give k }
 table.sort(keys)
 print(table.concat(keys, ","))
